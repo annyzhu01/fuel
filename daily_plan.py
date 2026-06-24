@@ -90,8 +90,15 @@ def build_daily_plan(user_id: str, date: str, preferences: list[str] = None) -> 
         "snack": "light snack",
     }
 
+    # Snack slot: skip RAG (cookbook recipes are full dishes, not snacks)
+    # Claude will suggest real snacks from nutrition knowledge instead
+    SNACK_BYPASS = True
+
     candidates_by_slot = {}
     for slot in slots_needed:
+        if slot == "snack" and SNACK_BYPASS:
+            candidates_by_slot[slot] = []
+            continue
         label = slot_labels.get(slot, slot)
         query = f"{label} {pref_str} around {int(per_slot_cal)} calories {int(per_slot_protein)}g protein"
         results = query_recipes(
@@ -105,6 +112,8 @@ def build_daily_plan(user_id: str, date: str, preferences: list[str] = None) -> 
     slots_text = ""
     for slot, recipes in candidates_by_slot.items():
         slots_text += f"\n## {slot.upper()} candidates\n"
+        if not recipes:
+            slots_text += "NO CANDIDATES — use your nutrition knowledge for a quick no-cook snack.\n"
         for r in recipes:
             slots_text += (
                 f"- [{r['id']}] {r['title']}: "
@@ -138,10 +147,11 @@ REMAINING TARGETS:
 SLOTS NEEDED: {', '.join(slots_needed)}
 PREFERENCES: {pref_str}
 
-RECIPE CANDIDATES (pick one per slot):
+RECIPE CANDIDATES (pick one per slot, from the recipe database):
 {slots_text}
+For slots marked "NO CANDIDATES" (e.g. snack): use your own nutrition knowledge to suggest a real snack — something quick and no-cook like Greek yoghurt, cottage cheese, protein shake, boiled eggs, rice cakes with nut butter, fruit + nuts. Set recipe_id to null for these.
 
-Pick the best recipe per slot so the combination hits the targets. Prioritise protein.
+Pick the best option per slot so the combination hits the targets. Prioritise protein.
 
 Respond ONLY with valid JSON:
 {{
