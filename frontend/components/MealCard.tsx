@@ -4,22 +4,27 @@ import { useState } from "react";
 import { PlanItem, swapMeal } from "@/lib/api";
 import { RecipeModal } from "@/components/RecipeModal";
 
+const MAX_SWAPS = 5;
+
 interface MealCardProps {
   item: PlanItem;
   onLog: (item: PlanItem) => void;
   onSwap: (slot: string, newItem: PlanItem) => void;
+  vibe?: string;
 }
 
-export function MealCard({ item, onLog, onSwap }: MealCardProps) {
+export function MealCard({ item, onLog, onSwap, vibe }: MealCardProps) {
   const [swapping, setSwapping] = useState(false);
   const [showRecipe, setShowRecipe] = useState(false);
   const [seenIds, setSeenIds] = useState<string[]>(item.recipe_id ? [item.recipe_id] : []);
+  const swapsUsed = seenIds.length - 1;
+  const swapsLeft = MAX_SWAPS - swapsUsed;
 
   async function handleSwap(e: React.MouseEvent) {
     e.stopPropagation();
     setSwapping(true);
     try {
-      const newItem = await swapMeal(item.slot, seenIds);
+      const newItem = await swapMeal(item.slot, seenIds, vibe);
       if (newItem.recipe_id) setSeenIds((prev) => [...prev, newItem.recipe_id]);
       onSwap(item.slot, newItem);
     } catch (e) {
@@ -40,14 +45,19 @@ export function MealCard({ item, onLog, onSwap }: MealCardProps) {
             <p className="text-xs text-gray-400 uppercase tracking-wider">{item.slot}</p>
             <p className="text-white font-semibold">{item.recipe_name}</p>
           </div>
-          <div className="flex gap-2">
-            <button
-              onClick={handleSwap}
-              disabled={swapping}
-              className="text-gray-400 hover:text-white disabled:opacity-40 text-xs px-2 py-1 rounded-full border border-gray-600 hover:border-gray-400 transition-colors"
-            >
-              {swapping ? "..." : "↻"}
-            </button>
+          <div className="flex gap-2 items-center">
+            {swapsLeft > 0 ? (
+              <button
+                onClick={handleSwap}
+                disabled={swapping}
+                className="text-gray-400 hover:text-white disabled:opacity-40 text-xs px-2 py-1 rounded-full border border-gray-600 hover:border-gray-400 transition-colors"
+                title={`${swapsLeft} swap${swapsLeft !== 1 ? "s" : ""} left`}
+              >
+                {swapping ? "..." : "↻"}
+              </button>
+            ) : (
+              <span className="text-gray-600 text-xs px-2">↻ 0 left</span>
+            )}
             <button
               onClick={(e) => { e.stopPropagation(); onLog(item); }}
               className="bg-green-600 hover:bg-green-500 text-white text-xs px-3 py-1 rounded-full transition-colors"

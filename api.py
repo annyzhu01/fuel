@@ -173,7 +173,7 @@ def get_recipe(recipe_id: str):
 
 
 @app.get("/swap-meal")
-def swap_meal(slot: str, exclude_ids: str = ""):
+def swap_meal(slot: str, exclude_ids: str = "", vibe: str = ""):
     if slot not in ("breakfast", "lunch", "dinner", "snack"):
         raise HTTPException(400, "slot must be breakfast, lunch, dinner, or snack")
     excluded = set(i.strip() for i in exclude_ids.split(",") if i.strip())
@@ -184,8 +184,9 @@ def swap_meal(slot: str, exclude_ids: str = ""):
     per_slot_protein = max(0, remaining["remaining_protein_g"] / n_slots)
     slot_labels = {"breakfast": "healthy breakfast", "lunch": "lunch", "dinner": "dinner", "snack": "light snack"}
     label = slot_labels[slot]
+    vibe_str = f" {vibe.strip()}" if vibe.strip() else ""
     results = query_recipes(
-        f"{label} around {int(per_slot_cal)} calories {int(per_slot_protein)}g protein",
+        f"{label}{vibe_str} around {int(per_slot_cal)} calories {int(per_slot_protein)}g protein",
         match_count=50,
         max_calories=per_slot_cal * 1.4,
         min_protein=max(0, per_slot_protein * 0.5),

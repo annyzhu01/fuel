@@ -45,12 +45,6 @@ export async function getBudget(): Promise<Budget> {
   return res.json();
 }
 
-export async function getDailyPlan(): Promise<DailyPlan> {
-  const res = await fetch(`${BASE}/daily-plan`, { cache: "no-store" });
-  if (!res.ok) throw new Error("Failed to fetch plan");
-  return res.json();
-}
-
 export async function logWorkout(exercise_type: string, duration_minutes: number) {
   const res = await fetch(`${BASE}/log-workout`, {
     method: "POST",
@@ -101,10 +95,22 @@ export async function getRecipe(id: string): Promise<RecipeDetail> {
   return res.json();
 }
 
-export async function swapMeal(slot: string, excludeIds: string[]): Promise<PlanItem> {
+export async function swapMeal(slot: string, excludeIds: string[], vibe?: string): Promise<PlanItem> {
   const param = excludeIds.map(encodeURIComponent).join(",");
-  const res = await fetch(`${BASE}/swap-meal?slot=${slot}&exclude_ids=${param}`, { cache: "no-store" });
+  const url = new URL(`${BASE}/swap-meal`);
+  url.searchParams.set("slot", slot);
+  url.searchParams.set("exclude_ids", param);
+  if (vibe) url.searchParams.set("vibe", vibe);
+  const res = await fetch(url.toString(), { cache: "no-store" });
   if (!res.ok) throw new Error("Failed to swap meal");
+  return res.json();
+}
+
+export async function getDailyPlan(vibe?: string): Promise<DailyPlan> {
+  const url = new URL(`${BASE}/daily-plan`);
+  if (vibe) url.searchParams.set("preferences", vibe);
+  const res = await fetch(url.toString(), { cache: "no-store" });
+  if (!res.ok) throw new Error("Failed to fetch plan");
   return res.json();
 }
 

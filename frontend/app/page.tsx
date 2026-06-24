@@ -26,15 +26,18 @@ export default function TodayPage() {
   const [duration, setDuration] = useState("");
   const [logging, setLogging] = useState(false);
 
+  const [vibe, setVibe] = useState("");
+  const [vibeInput, setVibeInput] = useState("");
+
   async function refresh() {
     const b = await getBudget();
     setBudget(b);
   }
 
-  async function refreshPlan() {
+  async function refreshPlan(v?: string) {
     setPlanLoading(true);
     try {
-      const p = await getDailyPlan();
+      const p = await getDailyPlan(v ?? vibe);
       setPlan(p);
     } catch (e) {
       console.error("Plan fetch failed", e);
@@ -58,6 +61,12 @@ export default function TodayPage() {
     }
     init();
   }, []);
+
+  async function handleVibeSubmit() {
+    const v = vibeInput.trim();
+    setVibe(v);
+    await refreshPlan(v);
+  }
 
   async function handleLogWorkout() {
     if (!exercise || !duration) return;
@@ -178,12 +187,44 @@ export default function TodayPage() {
       )}
 
       <div className="flex flex-col gap-3">
-        <h2 className="text-lg font-semibold text-white">What to eat</h2>
+        <div className="flex justify-between items-center">
+          <h2 className="text-lg font-semibold text-white">What to eat</h2>
+        </div>
+
+        <div className="flex gap-2">
+          <input
+            className="flex-1 bg-gray-800 text-white rounded-xl px-4 py-2 text-sm placeholder-gray-500 outline-none focus:ring-1 focus:ring-green-500"
+            placeholder="What do you feel like? (e.g. something spicy, Asian, pasta)"
+            value={vibeInput}
+            onChange={(e) => setVibeInput(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleVibeSubmit()}
+          />
+          <button
+            onClick={handleVibeSubmit}
+            disabled={planLoading}
+            className="bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-colors"
+          >
+            {planLoading ? "..." : "Go"}
+          </button>
+        </div>
+
+        {vibe && (
+          <p className="text-xs text-gray-500">
+            Showing results for "{vibe}" —{" "}
+            <button
+              className="text-gray-400 hover:text-white underline"
+              onClick={() => { setVibe(""); setVibeInput(""); refreshPlan(""); }}
+            >
+              clear
+            </button>
+          </p>
+        )}
+
         {planLoading ? (
           <p className="text-gray-400 text-sm">Updating suggestions...</p>
         ) : plan?.plan?.length ? (
           plan.plan.map((item, i) => (
-            <MealCard key={i} item={item} onLog={handleLogMeal} onSwap={handleSwap} />
+            <MealCard key={i} item={item} onLog={handleLogMeal} onSwap={handleSwap} vibe={vibe} />
           ))
         ) : (
           <p className="text-gray-400 text-sm">All meals logged for today.</p>
