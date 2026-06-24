@@ -1,11 +1,29 @@
-import { PlanItem } from "@/lib/api";
+"use client";
+
+import { useState } from "react";
+import { PlanItem, swapMeal } from "@/lib/api";
 
 interface MealCardProps {
   item: PlanItem;
   onLog: (item: PlanItem) => void;
+  onSwap: (slot: string, newItem: PlanItem) => void;
 }
 
-export function MealCard({ item, onLog }: MealCardProps) {
+export function MealCard({ item, onLog, onSwap }: MealCardProps) {
+  const [swapping, setSwapping] = useState(false);
+
+  async function handleSwap() {
+    setSwapping(true);
+    try {
+      const newItem = await swapMeal(item.slot, item.recipe_id ?? "");
+      onSwap(item.slot, newItem);
+    } catch (e) {
+      console.error("Swap failed", e);
+    } finally {
+      setSwapping(false);
+    }
+  }
+
   return (
     <div className="bg-gray-800 rounded-xl p-4 flex flex-col gap-2">
       <div className="flex justify-between items-start">
@@ -13,12 +31,21 @@ export function MealCard({ item, onLog }: MealCardProps) {
           <p className="text-xs text-gray-400 uppercase tracking-wider">{item.slot}</p>
           <p className="text-white font-semibold">{item.recipe_name}</p>
         </div>
-        <button
-          onClick={() => onLog(item)}
-          className="bg-green-600 hover:bg-green-500 text-white text-xs px-3 py-1 rounded-full transition-colors"
-        >
-          Log
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={handleSwap}
+            disabled={swapping}
+            className="text-gray-400 hover:text-white disabled:opacity-40 text-xs px-2 py-1 rounded-full border border-gray-600 hover:border-gray-400 transition-colors"
+          >
+            {swapping ? "..." : "↻"}
+          </button>
+          <button
+            onClick={() => onLog(item)}
+            className="bg-green-600 hover:bg-green-500 text-white text-xs px-3 py-1 rounded-full transition-colors"
+          >
+            Log
+          </button>
+        </div>
       </div>
       <p className="text-xs text-gray-400 italic">{item.reason}</p>
       <div className="flex gap-3 text-xs text-gray-300">

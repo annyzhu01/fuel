@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from workout_calories import estimate_calories_burned
+from query_recipes import query_recipes
 from daily_plan import get_daily_budget, build_daily_plan
 from daily_plan_agentic import build_daily_plan_agentic
 from utils import get_supabase_client
@@ -115,6 +116,39 @@ def log_meal(body: MealLog):
     }).execute()
     updated = get_daily_budget(USER_ID, str(date.today()))
     return {"logged": True, "updated_budget": updated}
+
+
+@app.get("/swap-meal")
+def swap_meal(slot: str, exclude_id: str = ""):
+    if slot not in ("breakfast", "lunch", "dinner", "snack"):
+        raise HTTPException(400, "slot must be breakfast, lunch, dinner, or snack")
+    budget = get_daily_budget(USER_ID, str(date.today()))
+    remaining = budget["remaining"]
+    n_slots = max(1, len(remaining["slots_needed"]) or 1)
+    per_slot_cal = max(100, remaining["remaining_calories"] / n_slots)
+    per_slot_protein = max(0, remaining["remaining_protein_g"] / n_slots)
+    slot_labels = {"breakfast": "healthy breakfast", "lunch": "lunch", "dinner": "dinner", "snack": "light snack"}
+    label = slot_labels[slot]
+    results = query_recipes(
+        f"{label} around {int(per_slot_cal)} calories {int(per_slot_protein)}g protein",
+        match_count=10,
+        max_calories=per_slot_cal * 1.4,
+        min_protein=max(0, per_slot_protein * 0.5),
+    )
+    results = [r for r in results if r.get("id") != exclude_id]
+    if not results:
+        raise HTTPException(404, "No alternative recipe found")
+    r = results[0]
+    return {
+        "slot": slot,
+        "recipe_id": r.get("id"),
+        "recipe_name": r.get("title"),
+        "calories": r.get("calories") or 0,
+        "protein_g": r.get("protein_g") or 0,
+        "carbs_g": r.get("carbohydrate_g") or 0,
+        "fat_g": r.get("fat_g") or 0,
+        "reason": "Alternative suggestion",
+    }
 
 
 @app.get("/daily-plan")

@@ -74,6 +74,13 @@ export default function TodayPage() {
     }
   }
 
+  function handleSwap(slot: string, newItem: PlanItem) {
+    setPlan((prev) => {
+      if (!prev) return prev;
+      return { ...prev, plan: prev.plan.map((p) => (p.slot === slot ? newItem : p)) };
+    });
+  }
+
   async function handleLogMeal(item: PlanItem) {
     await logMeal({
       meal_slot: item.slot,
@@ -176,7 +183,7 @@ export default function TodayPage() {
           <p className="text-gray-400 text-sm">Updating suggestions...</p>
         ) : plan?.plan?.length ? (
           plan.plan.map((item, i) => (
-            <MealCard key={i} item={item} onLog={handleLogMeal} />
+            <MealCard key={i} item={item} onLog={handleLogMeal} onSwap={handleSwap} />
           ))
         ) : (
           <p className="text-gray-400 text-sm">All meals logged for today.</p>

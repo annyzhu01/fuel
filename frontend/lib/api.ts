@@ -78,6 +78,12 @@ export async function logMeal(payload: {
   return res.json();
 }
 
+export async function swapMeal(slot: string, excludeId: string): Promise<PlanItem> {
+  const res = await fetch(`${BASE}/swap-meal?slot=${slot}&exclude_id=${encodeURIComponent(excludeId)}`, { cache: "no-store" });
+  if (!res.ok) throw new Error("Failed to swap meal");
+  return res.json();
+}
+
 export async function getPantry(): Promise<string[]> {
   const res = await fetch(`${BASE}/pantry`, { cache: "no-store" });
   if (!res.ok) throw new Error("Failed to fetch pantry");
