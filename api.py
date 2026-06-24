@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+import anthropic
 from workout_calories import estimate_calories_burned
 from query_recipes import query_recipes
 from daily_plan import get_daily_budget, build_daily_plan
@@ -138,6 +139,25 @@ def get_recipe(recipe_id: str):
         .execute()
     )
     recipe["ingredients"] = [r["ingredients"]["name"] for r in ing_rows.data if r.get("ingredients")]
+
+    client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+    ing_list = ", ".join(recipe["ingredients"][:15]) or "unknown"
+    tip_resp = client.messages.create(
+        model="claude-haiku-4-5",
+        max_tokens=120,
+        messages=[{
+            "role": "user",
+            "content": (
+                f"Recipe: {recipe['title']}\n"
+                f"Macros: {recipe.get('calories', '?')} kcal, {recipe.get('protein_g', '?')}g protein, "
+                f"{recipe.get('carbohydrate_g', '?')}g carbs, {recipe.get('fat_g', '?')}g fat\n"
+                f"Ingredients: {ing_list}\n\n"
+                "Give ONE concise healthy tip (2-3 sentences max): suggest a specific vegetable to add to bulk it up, "
+                "or one swap to reduce calories while preserving taste. Be specific and practical. No intro phrases."
+            ),
+        }],
+    )
+    recipe["healthy_tip"] = tip_resp.content[0].text.strip()
     return recipe
 
 

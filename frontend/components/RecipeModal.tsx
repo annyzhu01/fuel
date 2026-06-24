@@ -67,6 +67,13 @@ export function RecipeModal({ recipeId, onClose }: RecipeModalProps) {
               </div>
             )}
 
+            {recipe.healthy_tip && (
+              <div className="bg-green-950/50 border border-green-800 rounded-xl px-4 py-3 flex gap-2 items-start">
+                <span className="text-green-400 text-base leading-none mt-0.5">💡</span>
+                <p className="text-green-300 text-sm">{recipe.healthy_tip}</p>
+              </div>
+            )}
+
             {recipe.steps?.length > 0 && (
               <div className="flex flex-col gap-2">
                 <h3 className="text-white font-semibold text-sm">Steps</h3>
