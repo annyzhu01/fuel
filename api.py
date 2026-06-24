@@ -124,7 +124,7 @@ def get_recipe(recipe_id: str):
     supabase = get_supabase_client()
     row = (
         supabase.table("recipes")
-        .select("id, title, description, steps, calories, protein_g, carbohydrate_g, fat_g, prep_time, cook_time, servings, category")
+        .select("id, title, description, steps, calories, protein_g, carbohydrate_g, fat_g, prep_time, cook_time, servings, category, healthy_tip")
         .eq("id", recipe_id)
         .single()
         .execute()
@@ -140,24 +140,28 @@ def get_recipe(recipe_id: str):
     )
     recipe["ingredients"] = [r["ingredients"]["name"] for r in ing_rows.data if r.get("ingredients")]
 
-    client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
-    ing_list = ", ".join(recipe["ingredients"][:15]) or "unknown"
-    tip_resp = client.messages.create(
-        model="claude-haiku-4-5",
-        max_tokens=120,
-        messages=[{
-            "role": "user",
-            "content": (
-                f"Recipe: {recipe['title']}\n"
-                f"Macros: {recipe.get('calories', '?')} kcal, {recipe.get('protein_g', '?')}g protein, "
-                f"{recipe.get('carbohydrate_g', '?')}g carbs, {recipe.get('fat_g', '?')}g fat\n"
-                f"Ingredients: {ing_list}\n\n"
-                "Give ONE concise healthy tip (2-3 sentences max): suggest a specific vegetable to add to bulk it up, "
-                "or one swap to reduce calories while preserving taste. Be specific and practical. No intro phrases."
-            ),
-        }],
-    )
-    recipe["healthy_tip"] = tip_resp.content[0].text.strip()
+    if not recipe.get("healthy_tip"):
+        client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+        ing_list = ", ".join(recipe["ingredients"][:15]) or "unknown"
+        tip_resp = client.messages.create(
+            model="claude-haiku-4-5",
+            max_tokens=120,
+            messages=[{
+                "role": "user",
+                "content": (
+                    f"Recipe: {recipe['title']}\n"
+                    f"Macros: {recipe.get('calories', '?')} kcal, {recipe.get('protein_g', '?')}g protein, "
+                    f"{recipe.get('carbohydrate_g', '?')}g carbs, {recipe.get('fat_g', '?')}g fat\n"
+                    f"Ingredients: {ing_list}\n\n"
+                    "Give ONE concise healthy tip (2-3 sentences max): suggest a specific vegetable to add to bulk it up, "
+                    "or one swap to reduce calories while preserving taste. Be specific and practical. No intro phrases."
+                ),
+            }],
+        )
+        tip = tip_resp.content[0].text.strip()
+        supabase.table("recipes").update({"healthy_tip": tip}).eq("id", recipe_id).execute()
+        recipe["healthy_tip"] = tip
+
     return recipe
 
 
