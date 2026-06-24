@@ -125,9 +125,13 @@ def build_daily_plan_agentic(user_id: str, date: str, preferences: list = None) 
 
     messages = [{"role": "user", "content": "Build the meal plan now."}]
     search_count = 0
+    turn_count = 0
     claude = _get_claude()
 
     while True:
+        turn_count += 1
+        if turn_count > MAX_SEARCH_CALLS * 3:
+            raise RuntimeError("Agentic planner exceeded max turns")
         response = claude.messages.create(
             model="claude-haiku-4-5",
             max_tokens=2000,
@@ -185,10 +189,10 @@ def build_daily_plan_agentic(user_id: str, date: str, preferences: list = None) 
             elif block.name == "submit_plan":
                 return {"budget": budget, **block.input}
 
-        messages.append({"role": "user", "content": tool_results})
-
         if should_submit:
-            messages.append({
-                "role": "user",
-                "content": "Search budget exhausted. You MUST call submit_plan now.",
+            tool_results.append({
+                "type": "text",
+                "text": f"Search budget exhausted ({MAX_SEARCH_CALLS}/{MAX_SEARCH_CALLS}). You MUST call submit_plan now with whatever plan you have.",
             })
+
+        messages.append({"role": "user", "content": tool_results})
