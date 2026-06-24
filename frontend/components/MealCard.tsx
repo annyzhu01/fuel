@@ -13,12 +13,14 @@ interface MealCardProps {
 export function MealCard({ item, onLog, onSwap }: MealCardProps) {
   const [swapping, setSwapping] = useState(false);
   const [showRecipe, setShowRecipe] = useState(false);
+  const [seenIds, setSeenIds] = useState<string[]>(item.recipe_id ? [item.recipe_id] : []);
 
   async function handleSwap(e: React.MouseEvent) {
     e.stopPropagation();
     setSwapping(true);
     try {
-      const newItem = await swapMeal(item.slot, item.recipe_id ?? "");
+      const newItem = await swapMeal(item.slot, seenIds);
+      if (newItem.recipe_id) setSeenIds((prev) => [...prev, newItem.recipe_id]);
       onSwap(item.slot, newItem);
     } catch (e) {
       console.error("Swap failed", e);

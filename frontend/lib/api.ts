@@ -101,8 +101,9 @@ export async function getRecipe(id: string): Promise<RecipeDetail> {
   return res.json();
 }
 
-export async function swapMeal(slot: string, excludeId: string): Promise<PlanItem> {
-  const res = await fetch(`${BASE}/swap-meal?slot=${slot}&exclude_id=${encodeURIComponent(excludeId)}`, { cache: "no-store" });
+export async function swapMeal(slot: string, excludeIds: string[]): Promise<PlanItem> {
+  const param = excludeIds.map(encodeURIComponent).join(",");
+  const res = await fetch(`${BASE}/swap-meal?slot=${slot}&exclude_ids=${param}`, { cache: "no-store" });
   if (!res.ok) throw new Error("Failed to swap meal");
   return res.json();
 }

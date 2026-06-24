@@ -173,9 +173,10 @@ def get_recipe(recipe_id: str):
 
 
 @app.get("/swap-meal")
-def swap_meal(slot: str, exclude_id: str = ""):
+def swap_meal(slot: str, exclude_ids: str = ""):
     if slot not in ("breakfast", "lunch", "dinner", "snack"):
         raise HTTPException(400, "slot must be breakfast, lunch, dinner, or snack")
+    excluded = set(i.strip() for i in exclude_ids.split(",") if i.strip())
     budget = get_daily_budget(USER_ID, str(date.today()))
     remaining = budget["remaining"]
     n_slots = max(1, len(remaining["slots_needed"]) or 1)
@@ -185,15 +186,15 @@ def swap_meal(slot: str, exclude_id: str = ""):
     label = slot_labels[slot]
     results = query_recipes(
         f"{label} around {int(per_slot_cal)} calories {int(per_slot_protein)}g protein",
-        match_count=10,
+        match_count=50,
         max_calories=per_slot_cal * 1.4,
         min_protein=max(0, per_slot_protein * 0.5),
     )
     import random
-    results = [r for r in results if r.get("id") != exclude_id]
+    results = [r for r in results if r.get("id") not in excluded]
     if not results:
         raise HTTPException(404, "No alternative recipe found")
-    r = random.choice(results[:5])
+    r = random.choice(results[:10])
     return {
         "slot": slot,
         "recipe_id": r.get("id"),
