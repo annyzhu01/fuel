@@ -168,8 +168,14 @@ Respond ONLY with valid JSON:
     }}
   ],
   "total_planned": {{"calories": 0, "protein_g": 0, "carbs_g": 0, "fat_g": 0}},
+  "protein_gap": 0,
+  "protein_warning": null,
   "coach_note": "one sentence summary"
-}}"""
+}}
+
+Rules for protein_gap and protein_warning:
+- protein_gap = remaining_protein_target - total_planned.protein_g (0 if on target)
+- protein_warning = null if gap <= 10g, otherwise a short actionable fix e.g. "Add a protein shake (+25g) or 200g cottage cheese (+24g) to close the gap.""""
 
     response = _get_claude().messages.create(
         model="claude-haiku-4-5",

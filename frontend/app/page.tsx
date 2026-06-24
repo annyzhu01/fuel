@@ -158,6 +158,13 @@ export default function TodayPage() {
         </div>
       )}
 
+      {plan?.protein_warning && (
+        <div className="bg-amber-900/40 border border-amber-600 rounded-xl px-4 py-3 flex gap-2 items-start">
+          <span className="text-amber-400 text-lg leading-none">⚠</span>
+          <p className="text-amber-300 text-sm">{plan.protein_warning}</p>
+        </div>
+      )}
+
       {plan?.coach_note && (
         <p className="text-gray-400 text-sm italic px-1">{plan.coach_note}</p>
       )}

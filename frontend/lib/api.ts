@@ -34,6 +34,8 @@ export interface DailyPlan {
   budget: Budget;
   plan: PlanItem[];
   total_planned: { calories: number; protein_g: number; carbs_g: number; fat_g: number };
+  protein_gap: number;
+  protein_warning: string | null;
   coach_note: string;
 }
 
