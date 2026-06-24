@@ -11,6 +11,7 @@ load_dotenv()
 from workout_calories import estimate_calories_burned
 from daily_plan import get_daily_budget, build_daily_plan
 from utils import get_supabase_client
+from pantry import get_pantry, add_to_pantry, remove_from_pantry
 
 
 @asynccontextmanager
@@ -119,3 +120,26 @@ def log_meal(body: MealLog):
 def daily_plan(preferences: str = ""):
     prefs = [p.strip() for p in preferences.split(",") if p.strip()]
     return build_daily_plan(USER_ID, str(date.today()), prefs)
+
+
+class PantryAdd(BaseModel):
+    ingredient: str
+
+
+@app.get("/pantry")
+def pantry_get():
+    return {"items": get_pantry(USER_ID)}
+
+
+@app.post("/pantry")
+def pantry_add(body: PantryAdd):
+    if not body.ingredient.strip():
+        raise HTTPException(400, "ingredient must not be empty")
+    items = add_to_pantry(USER_ID, body.ingredient)
+    return {"added": body.ingredient.strip().lower(), "items": items}
+
+
+@app.delete("/pantry/{ingredient}")
+def pantry_remove(ingredient: str):
+    items = remove_from_pantry(USER_ID, ingredient)
+    return {"removed": ingredient.lower(), "items": items}
