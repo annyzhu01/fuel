@@ -182,10 +182,11 @@ def swap_meal(slot: str, exclude_id: str = ""):
         max_calories=per_slot_cal * 1.4,
         min_protein=max(0, per_slot_protein * 0.5),
     )
+    import random
     results = [r for r in results if r.get("id") != exclude_id]
     if not results:
         raise HTTPException(404, "No alternative recipe found")
-    r = results[0]
+    r = random.choice(results[:5])
     return {
         "slot": slot,
         "recipe_id": r.get("id"),
