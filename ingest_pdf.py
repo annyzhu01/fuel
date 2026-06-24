@@ -36,17 +36,28 @@ TEXT:
 {chunk_text}"""
 
 
-def extract_text_chunks(pdf_path: str, pages_per_chunk: int = 6) -> list[str]:
-    chunks = []
-    current_pages = []
+def extract_text_chunks(
+    pdf_path: str,
+    max_pages_before_chunk: int = 40,
+    pages_per_chunk: int = 10,
+    overlap: int = 2,
+) -> list[str]:
+    """
+    Small PDFs (≤ max_pages_before_chunk pages): one chunk = whole PDF.
+    Large PDFs: sliding window with overlap to avoid splitting recipes across boundaries.
+    """
     with pdfplumber.open(pdf_path) as pdf:
-        for page in pdf.pages:
-            current_pages.append(page.extract_text() or "")
-            if len(current_pages) == pages_per_chunk:
-                chunks.append("\n\n".join(current_pages))
-                current_pages = []
-    if current_pages:
-        chunks.append("\n\n".join(current_pages))
+        pages = [page.extract_text() or "" for page in pdf.pages]
+
+    if len(pages) <= max_pages_before_chunk:
+        return ["\n\n".join(pages)]
+
+    chunks = []
+    step = pages_per_chunk - overlap
+    for i in range(0, len(pages), step):
+        chunk_pages = pages[i: i + pages_per_chunk]
+        if chunk_pages:
+            chunks.append("\n\n".join(chunk_pages))
     return chunks
 
 

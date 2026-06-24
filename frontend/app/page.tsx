@@ -1,101 +1,179 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import { useEffect, useState } from "react";
+import {
+  getBudget,
+  getDailyPlan,
+  logWorkout,
+  logMeal,
+  Budget,
+  DailyPlan,
+  PlanItem,
+} from "@/lib/api";
+import { MacroRing } from "@/components/MacroRing";
+import { MealCard } from "@/components/MealCard";
+
+export default function TodayPage() {
+  const [budget, setBudget] = useState<Budget | null>(null);
+  const [plan, setPlan] = useState<DailyPlan | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [planLoading, setPlanLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const [showWorkout, setShowWorkout] = useState(false);
+  const [exercise, setExercise] = useState("");
+  const [duration, setDuration] = useState("");
+  const [logging, setLogging] = useState(false);
+
+  async function refresh() {
+    const b = await getBudget();
+    setBudget(b);
+  }
+
+  async function refreshPlan() {
+    setPlanLoading(true);
+    try {
+      const p = await getDailyPlan();
+      setPlan(p);
+    } catch (e) {
+      console.error("Plan fetch failed", e);
+    } finally {
+      setPlanLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    async function init() {
+      setLoading(true);
+      setError(null);
+      try {
+        await refresh();
+        await refreshPlan();
+      } catch {
+        setError("Cannot reach API. Is the backend running on port 8000?");
+      } finally {
+        setLoading(false);
+      }
+    }
+    init();
+  }, []);
+
+  async function handleLogWorkout() {
+    if (!exercise || !duration) return;
+    setLogging(true);
+    try {
+      await logWorkout(exercise, parseFloat(duration));
+      setShowWorkout(false);
+      setExercise("");
+      setDuration("");
+      await refresh();
+      await refreshPlan();
+    } finally {
+      setLogging(false);
+    }
+  }
+
+  async function handleLogMeal(item: PlanItem) {
+    await logMeal({
+      meal_slot: item.slot,
+      description: item.recipe_name,
+      calories: item.calories,
+      protein_g: item.protein_g,
+      carbs_g: item.carbs_g,
+      fat_g: item.fat_g,
+    });
+    await refresh();
+    await refreshPlan();
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-gray-400">
+        Loading...
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-red-400 text-sm px-8 text-center">
+        {error}
+      </div>
+    );
+  }
+
+  const r = budget?.remaining;
+  const t = budget?.target;
+  const totalCal = (t?.base_calories ?? 0) + (budget?.workout_burn ?? 0);
+
   return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="https://nextjs.org/icons/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-semibold">
-              app/page.tsx
-            </code>
-            .
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
+    <main className="min-h-screen max-w-md mx-auto p-4 flex flex-col gap-6">
+      <div className="flex justify-between items-center pt-4">
+        <h1 className="text-2xl font-bold text-white">Fuel</h1>
+        {(budget?.workout_burn ?? 0) > 0 && (
+          <span className="text-green-400 text-sm font-medium">
+            +{budget!.workout_burn} kcal burned
+          </span>
+        )}
+      </div>
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="https://nextjs.org/icons/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:min-w-44"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+      {r && t && (
+        <div className="flex justify-around bg-gray-900 rounded-2xl p-4">
+          <MacroRing remaining={r.remaining_calories} total={totalCal} label="kcal" color="#22c55e" />
+          <MacroRing remaining={r.remaining_protein_g} total={t.goal_protein_g} label="protein" color="#3b82f6" />
+          <MacroRing remaining={r.remaining_carbs_g} total={t.goal_carbs_g} label="carbs" color="#f59e0b" />
+          <MacroRing remaining={r.remaining_fat_g} total={t.goal_fat_g} label="fat" color="#ef4444" />
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-6 flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
+      )}
+
+      <button
+        onClick={() => setShowWorkout(!showWorkout)}
+        className="w-full bg-gray-800 hover:bg-gray-700 text-white rounded-xl py-3 font-semibold transition-colors"
+      >
+        {showWorkout ? "Cancel" : "+ Log Workout"}
+      </button>
+
+      {showWorkout && (
+        <div className="bg-gray-800 rounded-xl p-4 flex flex-col gap-3">
+          <input
+            className="bg-gray-700 text-white rounded-lg px-3 py-2 text-sm placeholder-gray-400 outline-none focus:ring-1 focus:ring-green-500"
+            placeholder="Exercise type (e.g. run, weights, legs)"
+            value={exercise}
+            onChange={(e) => setExercise(e.target.value)}
           />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
+          <input
+            className="bg-gray-700 text-white rounded-lg px-3 py-2 text-sm placeholder-gray-400 outline-none focus:ring-1 focus:ring-green-500"
+            placeholder="Duration (minutes)"
+            type="number"
+            value={duration}
+            onChange={(e) => setDuration(e.target.value)}
           />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
+          <button
+            onClick={handleLogWorkout}
+            disabled={logging || !exercise || !duration}
+            className="bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white rounded-lg py-2 font-semibold text-sm transition-colors"
+          >
+            {logging ? "Saving..." : "Save Workout"}
+          </button>
+        </div>
+      )}
+
+      {plan?.coach_note && (
+        <p className="text-gray-400 text-sm italic px-1">{plan.coach_note}</p>
+      )}
+
+      <div className="flex flex-col gap-3">
+        <h2 className="text-lg font-semibold text-white">What to eat</h2>
+        {planLoading ? (
+          <p className="text-gray-400 text-sm">Updating suggestions...</p>
+        ) : plan?.plan?.length ? (
+          plan.plan.map((item, i) => (
+            <MealCard key={i} item={item} onLog={handleLogMeal} />
+          ))
+        ) : (
+          <p className="text-gray-400 text-sm">All meals logged for today.</p>
+        )}
+      </div>
+    </main>
   );
 }
