@@ -78,6 +78,27 @@ export async function logMeal(payload: {
   return res.json();
 }
 
+export interface RecipeDetail {
+  id: string;
+  title: string;
+  description: string | null;
+  steps: string[];
+  calories: number;
+  protein_g: number;
+  carbohydrate_g: number;
+  fat_g: number;
+  prep_time: string | null;
+  cook_time: string | null;
+  servings: string | null;
+  category: string | null;
+}
+
+export async function getRecipe(id: string): Promise<RecipeDetail> {
+  const res = await fetch(`${BASE}/recipe/${id}`, { cache: "no-store" });
+  if (!res.ok) throw new Error("Failed to fetch recipe");
+  return res.json();
+}
+
 export async function swapMeal(slot: string, excludeId: string): Promise<PlanItem> {
   const res = await fetch(`${BASE}/swap-meal?slot=${slot}&exclude_id=${encodeURIComponent(excludeId)}`, { cache: "no-store" });
   if (!res.ok) throw new Error("Failed to swap meal");

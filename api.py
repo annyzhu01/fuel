@@ -118,6 +118,21 @@ def log_meal(body: MealLog):
     return {"logged": True, "updated_budget": updated}
 
 
+@app.get("/recipe/{recipe_id}")
+def get_recipe(recipe_id: str):
+    supabase = get_supabase_client()
+    row = (
+        supabase.table("recipes")
+        .select("id, title, description, steps, calories, protein_g, carbohydrate_g, fat_g, prep_time, cook_time, servings, category")
+        .eq("id", recipe_id)
+        .single()
+        .execute()
+    )
+    if not row.data:
+        raise HTTPException(404, "Recipe not found")
+    return row.data
+
+
 @app.get("/swap-meal")
 def swap_meal(slot: str, exclude_id: str = ""):
     if slot not in ("breakfast", "lunch", "dinner", "snack"):
