@@ -121,23 +121,30 @@ def log_meal(body: MealLog):
 
 @app.get("/recipe/{recipe_id}")
 def get_recipe(recipe_id: str):
-    supabase = get_supabase_client()
-    row = (
-        supabase.table("recipes")
-        .select("id, title, description, steps, calories, protein_g, carbohydrate_g, fat_g, prep_time, cook_time, servings, category, healthy_tip")
-        .eq("id", recipe_id)
-        .single()
-        .execute()
-    )
-    if not row.data:
-        raise HTTPException(404, "Recipe not found")
-    recipe = row.data
-    ing_rows = (
-        supabase.table("recipe_ingredients")
-        .select("quantity, ingredients(name)")
-        .eq("recipe_id", recipe_id)
-        .execute()
-    )
+    import httpx
+    for attempt in range(3):
+        try:
+            supabase = get_supabase_client()
+            row = (
+                supabase.table("recipes")
+                .select("id, title, description, steps, calories, protein_g, carbohydrate_g, fat_g, prep_time, cook_time, servings, category, healthy_tip")
+                .eq("id", recipe_id)
+                .single()
+                .execute()
+            )
+            if not row.data:
+                raise HTTPException(404, "Recipe not found")
+            recipe = row.data
+            ing_rows = (
+                supabase.table("recipe_ingredients")
+                .select("quantity, ingredients(name)")
+                .eq("recipe_id", recipe_id)
+                .execute()
+            )
+            break
+        except httpx.ReadError:
+            if attempt == 2:
+                raise HTTPException(503, "Database connection error, please retry")
     recipe["ingredients"] = [r["ingredients"]["name"] for r in ing_rows.data if r.get("ingredients")]
 
     if not recipe.get("healthy_tip"):
