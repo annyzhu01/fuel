@@ -16,8 +16,9 @@ def test_compute_remaining_with_workout_and_meal():
     food_logged = [
         {"meal_slot": "breakfast", "calories": 500, "protein_g": 30, "carbs_g": 55, "fat_g": 14}
     ]
-    result = _compute_remaining(target, 400, food_logged)
-    assert result["remaining_calories"] == 1700.0   # 1800 + 400 - 500
+    # 400 kcal cardio burn >300 → add 50% (200). weights burn ignored.
+    result = _compute_remaining(target, 400, food_logged, cardio_burn=400)
+    assert result["remaining_calories"] == 1500.0   # 1800 + 200 - 500
     assert result["remaining_protein_g"] == 90.0    # 120 - 30
     assert "breakfast" not in result["slots_needed"]
     assert "lunch" in result["slots_needed"]

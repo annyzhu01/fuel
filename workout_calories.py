@@ -1,3 +1,8 @@
+_CARDIO_TYPES = {
+    "run", "running", "jog", "jogging", "walk", "walking",
+    "cycling", "bike", "swim", "swimming", "rowing", "elliptical",
+}
+
 _MET = {
     "run": 9.8,
     "running": 9.8,
@@ -36,3 +41,7 @@ def estimate_calories_burned(
     met = _MET.get(exercise_type.lower().strip(), _DEFAULT_MET)
     hours = duration_minutes / 60
     return round(met * user_weight_kg * hours, 1)
+
+
+def is_cardio(exercise_type: str) -> bool:
+    return exercise_type.lower().strip() in _CARDIO_TYPES

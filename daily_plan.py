@@ -3,6 +3,7 @@ import os
 import anthropic
 from utils import get_supabase_client
 from query_recipes import query_recipes
+from workout_calories import is_cardio
 
 _MEAL_SLOTS = ["breakfast", "lunch", "dinner", "snack"]
 
@@ -16,8 +17,10 @@ def _get_claude():
     return _claude
 
 
-def _compute_remaining(target: dict, workout_burn: float, food_logged: list[dict]) -> dict:
-    total_calories = target["base_calories"] + workout_burn
+def _compute_remaining(target: dict, workout_burn: float, food_logged: list[dict], cardio_burn: float = 0.0) -> dict:
+    # Only cardio burn (≥50% if >300 kcal) adds to calorie budget; weights burn stays as deficit
+    cardio_add = (cardio_burn * 0.5) if cardio_burn > 300 else cardio_burn
+    total_calories = target["base_calories"] + cardio_add
     consumed_calories = sum(f["calories"] for f in food_logged)
     consumed_protein = sum(f["protein_g"] for f in food_logged)
     consumed_carbs = sum(f["carbs_g"] for f in food_logged)
@@ -47,12 +50,13 @@ def get_daily_budget(user_id: str, date: str) -> dict:
 
     workout_rows = (
         supabase.table("workout_logs")
-        .select("calories_burned")
+        .select("exercise_type, calories_burned")
         .eq("user_id", user_id)
         .eq("date", date)
         .execute()
     )
     workout_burn = sum(r["calories_burned"] for r in workout_rows.data)
+    cardio_burn = sum(r["calories_burned"] for r in workout_rows.data if is_cardio(r["exercise_type"]))
 
     food_rows = (
         supabase.table("food_logs")
@@ -62,10 +66,11 @@ def get_daily_budget(user_id: str, date: str) -> dict:
         .execute()
     )
 
-    remaining = _compute_remaining(target, workout_burn, food_rows.data)
+    remaining = _compute_remaining(target, workout_burn, food_rows.data, cardio_burn=cardio_burn)
     return {
         "target": target,
         "workout_burn": workout_burn,
+        "cardio_burn": cardio_burn,
         "remaining": remaining,
     }
 
