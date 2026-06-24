@@ -175,7 +175,7 @@ Respond ONLY with valid JSON:
 
 Rules for protein_gap and protein_warning:
 - protein_gap = remaining_protein_target - total_planned.protein_g (0 if on target)
-- protein_warning = null if gap <= 10g, otherwise a short actionable fix e.g. "Add a protein shake (+25g) or 200g cottage cheese (+24g) to close the gap.""""
+- protein_warning = null if gap <= 10g, otherwise a short actionable fix e.g. "Add a protein shake (+25g) or 200g cottage cheese (+24g) to close the gap."""
 
     response = _get_claude().messages.create(
         model="claude-haiku-4-5",
