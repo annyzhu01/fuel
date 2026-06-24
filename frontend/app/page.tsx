@@ -12,6 +12,7 @@ import {
 } from "@/lib/api";
 import { MacroRing } from "@/components/MacroRing";
 import { MealCard } from "@/components/MealCard";
+import { Pantry } from "@/components/Pantry";
 
 export default function TodayPage() {
   const [budget, setBudget] = useState<Budget | null>(null);
@@ -181,6 +182,8 @@ export default function TodayPage() {
           <p className="text-gray-400 text-sm">All meals logged for today.</p>
         )}
       </div>
+
+      <Pantry />
     </main>
   );
 }

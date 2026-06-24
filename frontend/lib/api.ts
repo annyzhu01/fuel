@@ -77,3 +77,30 @@ export async function logMeal(payload: {
   if (!res.ok) throw new Error("Failed to log meal");
   return res.json();
 }
+
+export async function getPantry(): Promise<string[]> {
+  const res = await fetch(`${BASE}/pantry`, { cache: "no-store" });
+  if (!res.ok) throw new Error("Failed to fetch pantry");
+  const data = await res.json();
+  return data.items;
+}
+
+export async function addToPantry(ingredient: string): Promise<string[]> {
+  const res = await fetch(`${BASE}/pantry`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ingredient }),
+  });
+  if (!res.ok) throw new Error("Failed to add to pantry");
+  const data = await res.json();
+  return data.items;
+}
+
+export async function removeFromPantry(ingredient: string): Promise<string[]> {
+  const res = await fetch(`${BASE}/pantry/${encodeURIComponent(ingredient)}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) throw new Error("Failed to remove from pantry");
+  const data = await res.json();
+  return data.items;
+}
