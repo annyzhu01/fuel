@@ -133,7 +133,7 @@ def build_daily_plan(user_id: str, date: str, preferences: list[str] = None) -> 
 NUTRITION RULES:
 - Goal is body recomposition (cut fat, build/maintain strength). Maintain a 250-500 kcal daily deficit.
 - Do NOT recommend eating back calories burned from weight training (legs, push, pull, weights, strength, crossfit). Those calories stay as deficit.
-- For cardio (run, jog, cycling, swim, rowing, elliptical): eat back ~50% of calories burned only if burn > 300 kcal.
+- For cardio (run, jog, cycling, swim, rowing, elliptical): eat back ~50% of calories burned only if burn > 400 kcal.
 - Protein target: 2.3-3.1g per kg bodyweight (65kg user = 150-200g/day). Prioritise hitting protein above all other macros.
 - On training days: favour higher carbs to fuel performance and glycogen replenishment.
 - On rest days: lower carbs, higher fat, same protein.
