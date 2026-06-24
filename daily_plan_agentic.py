@@ -126,6 +126,7 @@ def build_daily_plan_agentic(user_id: str, date: str, preferences: list = None) 
     messages = [{"role": "user", "content": "Build the meal plan now."}]
     search_count = 0
     turn_count = 0
+    end_turn_nudges = 0
     claude = _get_claude()
 
     while True:
@@ -145,9 +146,12 @@ def build_daily_plan_agentic(user_id: str, date: str, preferences: list = None) 
 
         if response.stop_reason == "end_turn":
             # Claude stopped without calling submit_plan — force it
+            end_turn_nudges += 1
+            if end_turn_nudges >= 2:
+                raise RuntimeError("Claude did not call submit_plan after nudging")
             messages.append({
                 "role": "user",
-                "content": "You must call submit_plan now with whatever plan you have.",
+                "content": "You MUST call submit_plan now. Do not respond with text only.",
             })
             continue
 
@@ -159,12 +163,22 @@ def build_daily_plan_agentic(user_id: str, date: str, preferences: list = None) 
             if block.type != "tool_use":
                 continue
 
+            # Reset nudge counter when a tool_use block is processed
+            end_turn_nudges = 0
+
             if block.name == "search_recipes":
                 search_count += 1
-                kwargs = {k: v for k, v in block.input.items() if k != "slot"}
-                results = query_recipes(match_count=5, **kwargs)
+                kwargs = dict(block.input)
+                kwargs.pop("slot", None)
+                query_text = kwargs.pop("query")
+                results = query_recipes(
+                    semantic_query=query_text,
+                    match_count=5,
+                    max_calories=kwargs.get("max_calories"),
+                    min_protein=kwargs.get("min_protein"),
+                )
 
-                result_text = f"Results for '{block.input['query']}' ({block.input['slot']}):\n"
+                result_text = f"Results for '{query_text}' ({block.input.get('slot', '')}):\n"
                 if not results:
                     result_text += "No results found."
                 else:
@@ -195,4 +209,5 @@ def build_daily_plan_agentic(user_id: str, date: str, preferences: list = None) 
                 "text": f"Search budget exhausted ({MAX_SEARCH_CALLS}/{MAX_SEARCH_CALLS}). You MUST call submit_plan now with whatever plan you have.",
             })
 
-        messages.append({"role": "user", "content": tool_results})
+        if tool_results:
+            messages.append({"role": "user", "content": tool_results})

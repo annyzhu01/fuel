@@ -142,3 +142,12 @@ def test_search_budget_capped_at_max(mock_claude, mock_budget, mock_pantry, mock
 
     # Verify query_recipes was called exactly MAX_SEARCH_CALLS times
     assert mock_query.call_count == MAX_SEARCH_CALLS
+
+    # Fix 1 regression guard: query_recipes must be called with semantic_query=, not query=
+    for call in mock_query.call_args_list:
+        assert "semantic_query" in call.kwargs, (
+            f"query_recipes called with positional/wrong kwarg — expected semantic_query=, got: {call}"
+        )
+        assert "query" not in call.kwargs, (
+            f"query_recipes called with 'query' kwarg — should be 'semantic_query': {call}"
+        )
