@@ -114,7 +114,20 @@ def build_daily_plan(user_id: str, date: str, preferences: list[str] = None) -> 
                 f"{r.get('fat_g') or '?'}g fat\n"
             )
 
-    prompt = f"""You are a nutrition coach. Build a meal plan to hit the user's remaining macro targets for today.
+    prompt = f"""You are a sports nutritionist coaching someone who lifts weights and does cardio. Apply these evidence-based rules when building the meal plan:
+
+NUTRITION RULES:
+- Goal is body recomposition (cut fat, build/maintain strength). Maintain a 250-500 kcal daily deficit.
+- Do NOT recommend eating back calories burned from weight training (legs, push, pull, weights, strength, crossfit). Those calories stay as deficit.
+- For cardio (run, jog, cycling, swim, rowing, elliptical): eat back ~50% of calories burned only if burn > 300 kcal.
+- Protein target: 2.3-3.1g per kg bodyweight (65kg user = 150-200g/day). Prioritise hitting protein above all other macros.
+- On training days: favour higher carbs to fuel performance and glycogen replenishment.
+- On rest days: lower carbs, higher fat, same protein.
+- Post strength-workout: surface a high-protein snack (25-40g protein + fast carbs) as the immediate next suggestion. This is the anabolic window.
+- Distribute protein across 3-5 meals (~0.4g/kg per meal = ~26g per meal for this user).
+- Never sacrifice protein to hit calorie target — it is better to be slightly over calories than under on protein.
+
+Build a meal plan to hit the user's remaining macro targets for today.
 
 REMAINING TARGETS:
 - Calories: {remaining['remaining_calories']:.0f} kcal
