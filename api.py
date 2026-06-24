@@ -10,6 +10,7 @@ load_dotenv()
 
 from workout_calories import estimate_calories_burned
 from daily_plan import get_daily_budget, build_daily_plan
+from daily_plan_agentic import build_daily_plan_agentic
 from utils import get_supabase_client
 from pantry import get_pantry, add_to_pantry, remove_from_pantry
 
@@ -117,8 +118,10 @@ def log_meal(body: MealLog):
 
 
 @app.get("/daily-plan")
-def daily_plan(preferences: str = ""):
+def daily_plan(preferences: str = "", agentic: bool = False):
     prefs = [p.strip() for p in preferences.split(",") if p.strip()]
+    if agentic:
+        return build_daily_plan_agentic(USER_ID, str(date.today()), prefs)
     return build_daily_plan(USER_ID, str(date.today()), prefs)
 
 
