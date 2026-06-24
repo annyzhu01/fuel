@@ -130,7 +130,15 @@ def get_recipe(recipe_id: str):
     )
     if not row.data:
         raise HTTPException(404, "Recipe not found")
-    return row.data
+    recipe = row.data
+    ing_rows = (
+        supabase.table("recipe_ingredients")
+        .select("quantity, ingredients(name)")
+        .eq("recipe_id", recipe_id)
+        .execute()
+    )
+    recipe["ingredients"] = [r["ingredients"]["name"] for r in ing_rows.data if r.get("ingredients")]
+    return recipe
 
 
 @app.get("/swap-meal")

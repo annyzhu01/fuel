@@ -55,6 +55,18 @@ export function RecipeModal({ recipeId, onClose }: RecipeModalProps) {
               </div>
             )}
 
+            {recipe.ingredients?.length > 0 && (
+              <div className="flex flex-col gap-1">
+                <h3 className="text-white font-semibold text-sm">Ingredients</h3>
+                {recipe.ingredients.map((ing, i) => (
+                  <div key={i} className="flex gap-2 text-sm text-gray-300">
+                    <span className="text-gray-500">•</span>
+                    <span>{ing}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
             {recipe.steps?.length > 0 && (
               <div className="flex flex-col gap-2">
                 <h3 className="text-white font-semibold text-sm">Steps</h3>

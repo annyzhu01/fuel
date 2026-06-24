@@ -91,6 +91,7 @@ export interface RecipeDetail {
   cook_time: string | null;
   servings: string | null;
   category: string | null;
+  ingredients: string[];
 }
 
 export async function getRecipe(id: string): Promise<RecipeDetail> {
