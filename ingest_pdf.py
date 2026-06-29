@@ -1,14 +1,12 @@
 import logging
 import sys
-import json
-import re
 import os
-import anthropic
 import pdfplumber
 
-from utils import get_supabase_client, parse_float
+from utils import get_supabase_client, get_anthropic_client, parse_float
 from load_data import upsert_ingredients
 from embed_recipes import embed_recipes
+from recipe_utils import parse_json_response
 
 logger = logging.getLogger(__name__)
 
@@ -64,28 +62,15 @@ def extract_text_chunks(
     return chunks
 
 
-def _parse_json_response(text: str) -> list[dict]:
-    text = text.strip()
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        pass
-    match = re.search(r"```(?:json)?\s*([\s\S]*?)```", text)
-    if match:
-        try:
-            return json.loads(match.group(1).strip())
-        except json.JSONDecodeError:
-            pass
-    raise json.JSONDecodeError("Could not parse JSON", text, 0)
-
-
 class ChunkExtractionError(Exception):
     pass
 
 
 def extract_recipes_from_chunk(
-    client: anthropic.Anthropic, chunk_text: str, chunk_index: int = 0
+    client, chunk_text: str, chunk_index: int = 0
 ) -> list[dict]:
+    import json
+    import anthropic
     try:
         response = client.messages.create(
             model="claude-haiku-4-5",
@@ -93,7 +78,7 @@ def extract_recipes_from_chunk(
             system=_EXTRACT_SYSTEM,
             messages=[{"role": "user", "content": _EXTRACT_USER_TMPL.format(chunk_text=chunk_text)}],
         )
-        return _parse_json_response(response.content[0].text)
+        return parse_json_response(response.content[0].text)
     except anthropic.APIError as e:
         logger.error("Claude API error on chunk %d: %s", chunk_index, e)
         raise ChunkExtractionError(f"API error on chunk {chunk_index}") from e
@@ -103,7 +88,7 @@ def extract_recipes_from_chunk(
 
 
 def extract_recipes_from_chunks(
-    client: anthropic.Anthropic, chunks: list[str]
+    client, chunks: list[str]
 ) -> tuple[list[dict], int]:
     all_recipes = []
     total = len(chunks)
@@ -182,7 +167,7 @@ def main():
         print("Usage: python ingest_pdf.py cookbook.pdf [another.pdf ...]")
         sys.exit(1)
 
-    client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+    client = get_anthropic_client()
     supabase = get_supabase_client()
 
     total_inserted = 0

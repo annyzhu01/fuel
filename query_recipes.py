@@ -1,7 +1,6 @@
 import logging
 import anthropic
-import os
-from utils import get_supabase_client
+from utils import get_supabase_client, get_anthropic_client
 from sentence_transformers import SentenceTransformer
 
 logger = logging.getLogger(__name__)
@@ -14,7 +13,7 @@ def _get_clients():
         _clients = (
             get_supabase_client(),
             SentenceTransformer("all-MiniLM-L6-v2"),
-            anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY")),
+            get_anthropic_client(),
         )
     return _clients
 

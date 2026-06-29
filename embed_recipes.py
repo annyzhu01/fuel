@@ -1,6 +1,7 @@
 import logging
 from utils import get_supabase_client, is_real_description
 from sentence_transformers import SentenceTransformer
+from recipe_utils import get_ingredient_names
 
 logger = logging.getLogger(__name__)
 
@@ -26,15 +27,6 @@ def build_embedding_text(recipe: dict, ingredient_names: list[str]) -> str:
     return ". ".join(parts)
 
 
-def get_ingredient_names_for_recipe(supabase, recipe_id: str) -> list[str]:
-    result = (
-        supabase.table("recipe_ingredients")
-        .select("ingredients(name)")
-        .eq("recipe_id", recipe_id)
-        .execute()
-    )
-    return [row["ingredients"]["name"] for row in result.data if row.get("ingredients")]
-
 def embed_recipes(batch_size: int = 50):
     model = SentenceTransformer("all-MiniLM-L6-v2")
     supabase = get_supabase_client()
@@ -52,7 +44,7 @@ def embed_recipes(batch_size: int = 50):
             break
         for recipe in unembedded_data.data:
             try:
-                ingredients = get_ingredient_names_for_recipe(supabase, recipe['id'])
+                ingredients = get_ingredient_names(supabase, recipe['id'])
                 embedding_text = build_embedding_text(recipe, ingredients)
                 vector = model.encode(embedding_text).tolist()
                 supabase.table("recipes").update({"embedding": vector}).eq("id", recipe["id"]).execute()
@@ -68,7 +60,3 @@ def embed_recipes(batch_size: int = 50):
 
 if __name__ == "__main__":
     embed_recipes(1000)
-    
-    
-        
-        
