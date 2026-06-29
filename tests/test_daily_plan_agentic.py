@@ -26,7 +26,7 @@ def _make_submit_response(plan_items):
 
 @patch("daily_plan_agentic.get_pantry", return_value=["chicken breast", "eggs"])
 @patch("daily_plan_agentic.get_daily_budget")
-@patch("daily_plan_agentic._get_claude")
+@patch("daily_plan_agentic.get_anthropic_client")
 def test_agentic_plan_returns_on_submit(mock_claude, mock_budget, mock_pantry):
     mock_budget.return_value = {
         "target": {"base_calories": 1800, "goal_protein_g": 160, "goal_carbs_g": 200, "goal_fat_g": 60},
@@ -102,7 +102,7 @@ def _make_budget_return_value():
 @patch("daily_plan_agentic.query_recipes", return_value=[])
 @patch("daily_plan_agentic.get_pantry", return_value=[])
 @patch("daily_plan_agentic.get_daily_budget")
-@patch("daily_plan_agentic._get_claude")
+@patch("daily_plan_agentic.get_anthropic_client")
 def test_search_budget_capped_at_max(mock_claude, mock_budget, mock_pantry, mock_query):
     """After MAX_SEARCH_CALLS searches, Claude must call submit_plan, not a 5th search."""
     from daily_plan_agentic import build_daily_plan_agentic, MAX_SEARCH_CALLS
