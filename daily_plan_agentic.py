@@ -1,19 +1,10 @@
-import os
-import anthropic
+from utils import get_anthropic_client
 from daily_plan import get_daily_budget
 from pantry import get_pantry
 from query_recipes import query_recipes
+from recipe_utils import format_recipe_candidate
 
 MAX_SEARCH_CALLS = 3
-
-_claude = None
-
-
-def _get_claude():
-    global _claude
-    if _claude is None:
-        _claude = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
-    return _claude
 
 
 _TOOLS = [
@@ -127,7 +118,7 @@ def build_daily_plan_agentic(user_id: str, date: str, preferences: list = None) 
     search_count = 0
     turn_count = 0
     end_turn_nudges = 0
-    claude = _get_claude()
+    claude = get_anthropic_client()
 
     while True:
         turn_count += 1
@@ -183,13 +174,7 @@ def build_daily_plan_agentic(user_id: str, date: str, preferences: list = None) 
                     result_text += "No results found."
                 else:
                     for r in results:
-                        result_text += (
-                            f"- [{r['id']}] {r['title']}: "
-                            f"{r.get('calories') or '?'} kcal, "
-                            f"{r.get('protein_g') or '?'}g protein, "
-                            f"{r.get('carbohydrate_g') or '?'}g carbs, "
-                            f"{r.get('fat_g') or '?'}g fat\n"
-                        )
+                        result_text += format_recipe_candidate(r) + "\n"
 
                 tool_results.append({
                     "type": "tool_result",

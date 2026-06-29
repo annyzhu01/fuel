@@ -3,6 +3,7 @@ import ast
 import os
 from dotenv import load_dotenv
 from supabase import create_client
+import anthropic
 
 load_dotenv()
 
@@ -15,6 +16,16 @@ def get_supabase_client():
     if _supabase is None:
         _supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
     return _supabase
+
+
+_anthropic_client = None
+
+def get_anthropic_client() -> anthropic.Anthropic:
+    """Return a shared singleton Anthropic client."""
+    global _anthropic_client
+    if _anthropic_client is None:
+        _anthropic_client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+    return _anthropic_client
 
 
 def parse_float(val):

@@ -8,13 +8,13 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-import anthropic
 from workout_calories import estimate_calories_burned
 from query_recipes import query_recipes
 from daily_plan import get_daily_budget, build_daily_plan
 from daily_plan_agentic import build_daily_plan_agentic
-from utils import get_supabase_client
+from utils import get_supabase_client, get_anthropic_client
 from pantry import get_pantry, add_to_pantry, remove_from_pantry
+from recipe_utils import SLOT_LABELS, compute_per_slot_budget, get_ingredient_names
 
 
 @asynccontextmanager
@@ -135,20 +135,14 @@ def get_recipe(recipe_id: str):
             if not row.data:
                 raise HTTPException(404, "Recipe not found")
             recipe = row.data
-            ing_rows = (
-                supabase.table("recipe_ingredients")
-                .select("quantity, ingredients(name)")
-                .eq("recipe_id", recipe_id)
-                .execute()
-            )
             break
         except httpx.ReadError:
             if attempt == 2:
                 raise HTTPException(503, "Database connection error, please retry")
-    recipe["ingredients"] = [r["ingredients"]["name"] for r in ing_rows.data if r.get("ingredients")]
+    recipe["ingredients"] = get_ingredient_names(supabase, recipe_id)
 
     if not recipe.get("healthy_tip"):
-        client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+        client = get_anthropic_client()
         ing_list = ", ".join(recipe["ingredients"][:15]) or "unknown"
         tip_resp = client.messages.create(
             model="claude-haiku-4-5",
@@ -179,11 +173,8 @@ def swap_meal(slot: str, exclude_ids: str = "", vibe: str = ""):
     excluded = set(i.strip() for i in exclude_ids.split(",") if i.strip())
     budget = get_daily_budget(USER_ID, str(date.today()))
     remaining = budget["remaining"]
-    n_slots = max(1, len(remaining["slots_needed"]) or 1)
-    per_slot_cal = max(100, remaining["remaining_calories"] / n_slots)
-    per_slot_protein = max(0, remaining["remaining_protein_g"] / n_slots)
-    slot_labels = {"breakfast": "healthy breakfast", "lunch": "lunch", "dinner": "dinner", "snack": "light snack"}
-    label = slot_labels[slot]
+    per_slot_cal, per_slot_protein = compute_per_slot_budget(remaining)
+    label = SLOT_LABELS[slot]
     vibe_str = f" {vibe.strip()}" if vibe.strip() else ""
     results = query_recipes(
         f"{label}{vibe_str} around {int(per_slot_cal)} calories {int(per_slot_protein)}g protein",
