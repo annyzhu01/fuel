@@ -151,3 +151,92 @@ def test_search_budget_capped_at_max(mock_claude, mock_budget, mock_pantry, mock
         assert "query" not in call.kwargs, (
             f"query_recipes called with 'query' kwarg — should be 'semantic_query': {call}"
         )
+
+
+def _make_search_response_for_slot(search_call_num, slot):
+    """Simulate Claude calling search_recipes for a specific slot."""
+    tool_use = MagicMock()
+    tool_use.type = "tool_use"
+    tool_use.name = "search_recipes"
+    tool_use.id = f"search_{search_call_num}"
+    tool_use.input = {"query": f"high protein {slot} meal", "slot": slot}
+    response = MagicMock()
+    response.stop_reason = "tool_use"
+    response.content = [tool_use]
+    return response
+
+
+@patch("daily_plan_agentic.query_recipes")
+@patch("daily_plan_agentic.get_pantry", return_value=[])
+@patch("daily_plan_agentic.get_daily_budget")
+@patch("daily_plan_agentic.get_anthropic_client")
+def test_agentic_search_deduplicates_across_slots(mock_claude, mock_budget, mock_pantry, mock_query):
+    """Recipes returned for breakfast must not appear in lunch results."""
+    from daily_plan_agentic import build_daily_plan_agentic
+
+    mock_budget.return_value = _make_budget_return_value()
+
+    shared_recipe = {"id": "dup-1", "title": "Shared Meal", "calories": 400,
+                     "protein_g": 30, "carbohydrate_g": 40, "fat_g": 12}
+    lunch_only = {"id": "lunch-1", "title": "Lunch Only", "calories": 350,
+                  "protein_g": 28, "carbohydrate_g": 35, "fat_g": 10}
+
+    # Both searches return the shared recipe; lunch also has a unique one
+    mock_query.side_effect = [
+        [shared_recipe],
+        [shared_recipe, lunch_only],
+    ]
+
+    # Claude: search breakfast, search lunch, then submit
+    plan_items = [
+        {"slot": "breakfast", "recipe_id": "dup-1", "recipe_name": "Shared Meal",
+         "calories": 400, "protein_g": 30, "carbs_g": 40, "fat_g": 12, "reason": "good"},
+        {"slot": "lunch", "recipe_id": "lunch-1", "recipe_name": "Lunch Only",
+         "calories": 350, "protein_g": 28, "carbs_g": 35, "fat_g": 10, "reason": "good"},
+    ]
+    mock_claude.return_value.messages.create.side_effect = [
+        _make_search_response_for_slot(1, "breakfast"),
+        _make_search_response_for_slot(2, "lunch"),
+        _make_submit_response(plan_items),
+    ]
+
+    result = build_daily_plan_agentic("mvp-user", "2026-06-24", [])
+
+    # Verify the second search excluded dup-1 from its results returned to Claude
+    # by checking the tool_result content sent back for the second search
+    messages_history = mock_claude.return_value.messages.create.call_args_list
+    # The second call's messages should contain the tool_result for the first search
+    # The third call's messages should contain the tool_result for the second search
+    third_call_msgs = messages_history[2][1]["messages"]
+    last_user_msg = [m for m in third_call_msgs if m["role"] == "user"][-1]
+    # The tool result content for the lunch search should NOT mention "Shared Meal"
+    # (it was filtered out), but SHOULD mention "Lunch Only"
+    tool_content = last_user_msg["content"][0]["content"]
+    assert "Lunch Only" in tool_content
+    assert "Shared Meal" not in tool_content
+
+
+@patch("daily_plan_agentic.query_recipes")
+@patch("daily_plan_agentic.get_pantry", return_value=[])
+@patch("daily_plan_agentic.get_daily_budget")
+@patch("daily_plan_agentic.get_anthropic_client")
+def test_agentic_submit_deduplicates_plan(mock_claude, mock_budget, mock_pantry, mock_query):
+    """If Claude submits duplicate recipe_ids, the later occurrence is cleared."""
+    from daily_plan_agentic import build_daily_plan_agentic
+
+    mock_budget.return_value = _make_budget_return_value()
+
+    # Claude immediately submits a plan with duplicates (no search calls)
+    dup_plan_items = [
+        {"slot": "breakfast", "recipe_id": "dup-1", "recipe_name": "Same Meal",
+         "calories": 400, "protein_g": 30, "carbs_g": 40, "fat_g": 12, "reason": "good"},
+        {"slot": "lunch", "recipe_id": "dup-1", "recipe_name": "Same Meal",
+         "calories": 400, "protein_g": 30, "carbs_g": 40, "fat_g": 12, "reason": "good"},
+    ]
+    mock_claude.return_value.messages.create.return_value = _make_submit_response(dup_plan_items)
+
+    result = build_daily_plan_agentic("mvp-user", "2026-06-24", [])
+
+    ids = [item["recipe_id"] for item in result["plan"]]
+    assert ids[0] == "dup-1"
+    assert ids[1] is None

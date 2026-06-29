@@ -1,4 +1,4 @@
-from daily_plan import _compute_remaining
+from daily_plan import _compute_remaining, _deduplicate_plan
 
 
 def test_compute_remaining_no_logs():
@@ -33,3 +33,53 @@ def test_all_slots_logged():
     result = _compute_remaining(target, 0, food_logged)
     assert result["slots_needed"] == []
     assert result["remaining_calories"] == 200.0  # 1800 - 1600
+
+
+# --- _deduplicate_plan tests ---
+
+
+def test_deduplicate_plan_no_duplicates():
+    plan = [
+        {"slot": "breakfast", "recipe_id": "aaa", "recipe_name": "Eggs"},
+        {"slot": "lunch", "recipe_id": "bbb", "recipe_name": "Chicken"},
+    ]
+    result = _deduplicate_plan(plan, {})
+    assert [item["recipe_id"] for item in result] == ["aaa", "bbb"]
+
+
+def test_deduplicate_plan_replaces_duplicate_with_candidate():
+    plan = [
+        {"slot": "breakfast", "recipe_id": "aaa", "recipe_name": "Eggs"},
+        {"slot": "lunch", "recipe_id": "aaa", "recipe_name": "Eggs"},
+    ]
+    candidates_by_slot = {
+        "lunch": [
+            {"id": "aaa", "title": "Eggs", "calories": 300, "protein_g": 20, "carbohydrate_g": 10, "fat_g": 15},
+            {"id": "ccc", "title": "Salad", "calories": 250, "protein_g": 15, "carbohydrate_g": 20, "fat_g": 10},
+        ],
+    }
+    result = _deduplicate_plan(plan, candidates_by_slot)
+    assert result[0]["recipe_id"] == "aaa"
+    assert result[1]["recipe_id"] == "ccc"
+    assert result[1]["recipe_name"] == "Salad"
+
+
+def test_deduplicate_plan_clears_id_when_no_candidate():
+    plan = [
+        {"slot": "breakfast", "recipe_id": "aaa", "recipe_name": "Eggs"},
+        {"slot": "lunch", "recipe_id": "aaa", "recipe_name": "Eggs"},
+    ]
+    result = _deduplicate_plan(plan, {})
+    assert result[0]["recipe_id"] == "aaa"
+    assert result[1]["recipe_id"] is None
+
+
+def test_deduplicate_plan_skips_none_recipe_ids():
+    plan = [
+        {"slot": "breakfast", "recipe_id": None, "recipe_name": "Yogurt"},
+        {"slot": "lunch", "recipe_id": None, "recipe_name": "Shake"},
+    ]
+    result = _deduplicate_plan(plan, {})
+    assert len(result) == 2
+    assert result[0]["recipe_id"] is None
+    assert result[1]["recipe_id"] is None
