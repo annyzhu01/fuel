@@ -101,7 +101,9 @@ STRATEGY:
 3. For snack: call submit_plan directly with a no-cook suggestion from your knowledge.
 4. Call submit_plan when all slots are filled or budget is exhausted.
 5. protein_gap = target_protein - total_planned_protein (0 if on target or over).
-6. protein_warning = null if gap <= 10g, otherwise a short actionable tip."""
+6. protein_warning = null if gap <= 10g, otherwise a short actionable tip.
+
+IMPORTANT: Every recipe must be unique — NEVER assign the same recipe to more than one slot. Each slot must have a different recipe_id."""
 
 
 def build_daily_plan_agentic(user_id: str, date: str, preferences: list = None) -> dict:
@@ -118,6 +120,7 @@ def build_daily_plan_agentic(user_id: str, date: str, preferences: list = None) 
     search_count = 0
     turn_count = 0
     end_turn_nudges = 0
+    seen_ids: set[str] = set()
     claude = get_anthropic_client()
 
     while True:
@@ -168,6 +171,11 @@ def build_daily_plan_agentic(user_id: str, date: str, preferences: list = None) 
                     max_calories=kwargs.get("max_calories"),
                     min_protein=kwargs.get("min_protein"),
                 )
+                # Exclude recipes already shown for other slots
+                results = [r for r in results if r.get("id") not in seen_ids]
+                for r in results:
+                    if r.get("id"):
+                        seen_ids.add(r["id"])
 
                 result_text = f"Results for '{query_text}' ({block.input.get('slot', '')}):\n"
                 if not results:
@@ -186,7 +194,21 @@ def build_daily_plan_agentic(user_id: str, date: str, preferences: list = None) 
                     should_submit = True
 
             elif block.name == "submit_plan":
-                return {"budget": budget, **block.input}
+                plan = block.input
+                # Deduplicate: drop later occurrences of the same recipe_id
+                if "plan" in plan:
+                    used: set[str] = set()
+                    deduped = []
+                    for item in plan["plan"]:
+                        rid = item.get("recipe_id")
+                        if rid and rid in used:
+                            item = {**item, "recipe_id": None,
+                                    "reason": "Swapped to avoid duplicate (no DB alternative)"}
+                        elif rid:
+                            used.add(rid)
+                        deduped.append(item)
+                    plan["plan"] = deduped
+                return {"budget": budget, **plan}
 
         if should_submit:
             tool_results.append({

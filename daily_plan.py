@@ -10,6 +10,49 @@ from recipe_utils import (
 )
 
 
+def _deduplicate_plan(plan_items: list[dict], candidates_by_slot: dict) -> list[dict]:
+    """Ensure no recipe_id appears in more than one slot.
+
+    Keeps the first occurrence and replaces later duplicates with the
+    best unused candidate for that slot.
+    """
+    seen: set[str] = set()
+    result = []
+    for item in plan_items:
+        rid = item.get("recipe_id")
+        if rid is None or rid not in seen:
+            if rid:
+                seen.add(rid)
+            result.append(item)
+            continue
+        # Duplicate — pick the first unused candidate for this slot
+        slot = item.get("slot", "")
+        candidates = candidates_by_slot.get(slot, [])
+        replacement = None
+        for c in candidates:
+            cid = c.get("id")
+            if cid and cid not in seen:
+                replacement = c
+                break
+        if replacement:
+            seen.add(replacement["id"])
+            result.append({
+                "slot": slot,
+                "recipe_id": replacement["id"],
+                "recipe_name": replacement.get("title", "Alternative"),
+                "calories": replacement.get("calories") or 0,
+                "protein_g": replacement.get("protein_g") or 0,
+                "carbs_g": replacement.get("carbohydrate_g") or 0,
+                "fat_g": replacement.get("fat_g") or 0,
+                "reason": "Swapped to avoid duplicate recipe",
+            })
+        else:
+            # No candidates left — keep item but clear recipe_id
+            result.append({**item, "recipe_id": None,
+                           "reason": "Swapped to avoid duplicate (no DB alternative)"})
+    return result
+
+
 def _compute_remaining(target: dict, workout_burn: float, food_logged: list[dict], cardio_burn: float = 0.0) -> dict:
     # Cardio: eat back 50% if >300 kcal burn, nothing if ≤300; weights always 0
     cardio_add = (cardio_burn * 0.5) if cardio_burn > 300 else 0
@@ -138,6 +181,7 @@ RECIPE CANDIDATES (pick one per slot, from the recipe database):
 For slots marked "NO CANDIDATES" (e.g. snack): use your own nutrition knowledge to suggest a real snack — something quick and no-cook like Greek yoghurt, cottage cheese, protein shake, boiled eggs, rice cakes with nut butter, fruit + nuts. Set recipe_id to null for these.
 
 Pick the best option per slot so the combination hits the targets. Prioritise protein.
+IMPORTANT: Every recipe must be unique — NEVER assign the same recipe to more than one slot. Each slot must have a different recipe_id.
 
 Respond ONLY with valid JSON:
 {{
@@ -169,5 +213,10 @@ Rules for protein_gap and protein_warning:
         messages=[{"role": "user", "content": prompt}],
     )
     plan = parse_json_response(response.content[0].text)
+
+    # Deduplicate: if the LLM repeated a recipe across slots, replace
+    # the later occurrence with the best unused candidate for that slot.
+    if "plan" in plan:
+        plan["plan"] = _deduplicate_plan(plan["plan"], candidates_by_slot)
 
     return {"budget": budget, **plan}
