@@ -1,9 +1,12 @@
 import json
+import logging
 import os
 import anthropic
 from utils import get_supabase_client
 from query_recipes import query_recipes
 from workout_calories import is_cardio
+
+logger = logging.getLogger(__name__)
 
 _MEAL_SLOTS = ["breakfast", "lunch", "dinner", "snack"]
 
@@ -43,10 +46,12 @@ def get_daily_budget(user_id: str, date: str) -> dict:
         .select("*")
         .eq("user_id", user_id)
         .eq("date", date)
-        .single()
+        .maybe_single()
         .execute()
     )
     target = target_row.data
+    if not target:
+        raise ValueError(f"No daily target found for user {user_id!r} on {date}")
 
     workout_rows = (
         supabase.table("workout_logs")
@@ -182,12 +187,20 @@ Rules for protein_gap and protein_warning:
 - protein_gap = remaining_protein_target - total_planned.protein_g (0 if on target)
 - protein_warning = null if gap <= 10g, otherwise a short actionable fix e.g. "Add a protein shake (+25g) or 200g cottage cheese (+24g) to close the gap."""
 
-    response = _get_claude().messages.create(
-        model="claude-haiku-4-5",
-        max_tokens=1000,
-        messages=[{"role": "user", "content": prompt}],
-    )
+    try:
+        response = _get_claude().messages.create(
+            model="claude-haiku-4-5",
+            max_tokens=1000,
+            messages=[{"role": "user", "content": prompt}],
+        )
+    except anthropic.APIError as e:
+        logger.error("Claude API error while building daily plan: %s", e)
+        raise RuntimeError("Failed to generate meal plan from AI service") from e
     raw = response.content[0].text.strip().replace("```json", "").replace("```", "").strip()
-    plan = json.loads(raw)
+    try:
+        plan = json.loads(raw)
+    except json.JSONDecodeError as e:
+        logger.error("Failed to parse meal plan JSON: %s", raw[:200])
+        raise RuntimeError("AI returned an invalid meal plan response") from e
 
     return {"budget": budget, **plan}

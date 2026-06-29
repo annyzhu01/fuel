@@ -13,7 +13,12 @@ _supabase = None
 def get_supabase_client():
     global _supabase
     if _supabase is None:
-        _supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
+        url = os.getenv("SUPABASE_URL")
+        key = os.getenv("SUPABASE_KEY")
+        if not url or not key:
+            missing = [v for v, val in [("SUPABASE_URL", url), ("SUPABASE_KEY", key)] if not val]
+            raise RuntimeError(f"Missing required environment variable(s): {', '.join(missing)}")
+        _supabase = create_client(url, key)
     return _supabase
 
 

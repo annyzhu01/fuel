@@ -1,3 +1,4 @@
+import logging
 import os
 from datetime import date
 from fastapi import FastAPI, HTTPException
@@ -7,6 +8,8 @@ from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 import anthropic
 from workout_calories import estimate_calories_burned
@@ -89,13 +92,17 @@ def log_workout(body: WorkoutLog):
         body.exercise_type, body.duration_minutes, DEFAULT_USER_WEIGHT_KG
     )
     supabase = get_supabase_client()
-    supabase.table("workout_logs").insert({
-        "user_id": USER_ID,
-        "date": str(date.today()),
-        "exercise_type": body.exercise_type,
-        "duration_minutes": body.duration_minutes,
-        "calories_burned": calories_burned,
-    }).execute()
+    try:
+        supabase.table("workout_logs").insert({
+            "user_id": USER_ID,
+            "date": str(date.today()),
+            "exercise_type": body.exercise_type,
+            "duration_minutes": body.duration_minutes,
+            "calories_burned": calories_burned,
+        }).execute()
+    except Exception as e:
+        logger.error("Failed to insert workout log: %s", e)
+        raise HTTPException(500, "Failed to save workout log") from e
     updated = get_daily_budget(USER_ID, str(date.today()))
     return {"calories_burned": calories_burned, "updated_budget": updated}
 
@@ -105,16 +112,20 @@ def log_meal(body: MealLog):
     if body.meal_slot not in ("breakfast", "lunch", "dinner", "snack"):
         raise HTTPException(400, "meal_slot must be breakfast, lunch, dinner, or snack")
     supabase = get_supabase_client()
-    supabase.table("food_logs").insert({
-        "user_id": USER_ID,
-        "date": str(date.today()),
-        "meal_slot": body.meal_slot,
-        "description": body.description,
-        "calories": body.calories,
-        "protein_g": body.protein_g,
-        "carbs_g": body.carbs_g,
-        "fat_g": body.fat_g,
-    }).execute()
+    try:
+        supabase.table("food_logs").insert({
+            "user_id": USER_ID,
+            "date": str(date.today()),
+            "meal_slot": body.meal_slot,
+            "description": body.description,
+            "calories": body.calories,
+            "protein_g": body.protein_g,
+            "carbs_g": body.carbs_g,
+            "fat_g": body.fat_g,
+        }).execute()
+    except Exception as e:
+        logger.error("Failed to insert food log: %s", e)
+        raise HTTPException(500, "Failed to save meal log") from e
     updated = get_daily_budget(USER_ID, str(date.today()))
     return {"logged": True, "updated_budget": updated}
 
@@ -122,6 +133,8 @@ def log_meal(body: MealLog):
 @app.get("/recipe/{recipe_id}")
 def get_recipe(recipe_id: str):
     import httpx
+    recipe = None
+    ing_rows = None
     for attempt in range(3):
         try:
             supabase = get_supabase_client()
@@ -142,32 +155,37 @@ def get_recipe(recipe_id: str):
                 .execute()
             )
             break
+        except HTTPException:
+            raise
         except httpx.ReadError:
             if attempt == 2:
                 raise HTTPException(503, "Database connection error, please retry")
     recipe["ingredients"] = [r["ingredients"]["name"] for r in ing_rows.data if r.get("ingredients")]
 
     if not recipe.get("healthy_tip"):
-        client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
-        ing_list = ", ".join(recipe["ingredients"][:15]) or "unknown"
-        tip_resp = client.messages.create(
-            model="claude-haiku-4-5",
-            max_tokens=120,
-            messages=[{
-                "role": "user",
-                "content": (
-                    f"Recipe: {recipe['title']}\n"
-                    f"Macros: {recipe.get('calories', '?')} kcal, {recipe.get('protein_g', '?')}g protein, "
-                    f"{recipe.get('carbohydrate_g', '?')}g carbs, {recipe.get('fat_g', '?')}g fat\n"
-                    f"Ingredients: {ing_list}\n\n"
-                    "Give ONE concise healthy tip (2-3 sentences max): suggest a specific vegetable to add to bulk it up, "
-                    "or one swap to reduce calories while preserving taste. Be specific and practical. No intro phrases."
-                ),
-            }],
-        )
-        tip = tip_resp.content[0].text.strip()
-        supabase.table("recipes").update({"healthy_tip": tip}).eq("id", recipe_id).execute()
-        recipe["healthy_tip"] = tip
+        try:
+            client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+            ing_list = ", ".join(recipe["ingredients"][:15]) or "unknown"
+            tip_resp = client.messages.create(
+                model="claude-haiku-4-5",
+                max_tokens=120,
+                messages=[{
+                    "role": "user",
+                    "content": (
+                        f"Recipe: {recipe['title']}\n"
+                        f"Macros: {recipe.get('calories', '?')} kcal, {recipe.get('protein_g', '?')}g protein, "
+                        f"{recipe.get('carbohydrate_g', '?')}g carbs, {recipe.get('fat_g', '?')}g fat\n"
+                        f"Ingredients: {ing_list}\n\n"
+                        "Give ONE concise healthy tip (2-3 sentences max): suggest a specific vegetable to add to bulk it up, "
+                        "or one swap to reduce calories while preserving taste. Be specific and practical. No intro phrases."
+                    ),
+                }],
+            )
+            tip = tip_resp.content[0].text.strip()
+            supabase.table("recipes").update({"healthy_tip": tip}).eq("id", recipe_id).execute()
+            recipe["healthy_tip"] = tip
+        except anthropic.APIError as e:
+            logger.warning("Failed to generate healthy tip for recipe %s: %s", recipe_id, e)
 
     return recipe
 
