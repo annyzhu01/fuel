@@ -1,5 +1,9 @@
+import logging
+import anthropic
 from utils import get_supabase_client, get_anthropic_client
 from sentence_transformers import SentenceTransformer
+
+logger = logging.getLogger(__name__)
 
 _clients = None
 
@@ -46,7 +50,11 @@ def query_recipes(
     params = {k: v for k, v in params.items() if v is not None}
     params["query_embedding"] = query_vector
 
-    result = supabase.rpc("match_recipes", params).execute()
+    try:
+        result = supabase.rpc("match_recipes", params).execute()
+    except Exception as e:
+        logger.error("Recipe search RPC failed for query %r: %s", semantic_query[:80], e)
+        raise RuntimeError("Recipe search failed") from e
     return result.data
 
 
@@ -111,53 +119,61 @@ def format_meal_as_context(meal: dict) -> str:
 def generate_response(user_query: str, recipes: list[dict]) -> str:
     _, _, claude = _get_clients()
     context = format_recipes_as_context(recipes)
-    response = claude.messages.create(
-        model="claude-haiku-4-5",
-        max_tokens=1024,
-        system=(
-            "You are a helpful nutrition and meal planning assistant. "
-            "You have access to a database of recipes with macro information. "
-            "Answer the user's question using only the retrieved recipes provided. "
-            "Be concise and practical."
-        ),
-        messages=[
-            {
-                "role": "user",
-                "content": (
-                    f"User query: {user_query}\n\n"
-                    f"Retrieved recipes:\n{context}\n\n"
-                    "Based on these recipes, answer the user's query."
-                ),
-            }
-        ],
-    )
+    try:
+        response = claude.messages.create(
+            model="claude-haiku-4-5",
+            max_tokens=1024,
+            system=(
+                "You are a helpful nutrition and meal planning assistant. "
+                "You have access to a database of recipes with macro information. "
+                "Answer the user's question using only the retrieved recipes provided. "
+                "Be concise and practical."
+            ),
+            messages=[
+                {
+                    "role": "user",
+                    "content": (
+                        f"User query: {user_query}\n\n"
+                        f"Retrieved recipes:\n{context}\n\n"
+                        "Based on these recipes, answer the user's query."
+                    ),
+                }
+            ],
+        )
+    except anthropic.APIError as e:
+        logger.error("Claude API error generating response: %s", e)
+        raise RuntimeError("Failed to generate AI response") from e
     return response.content[0].text
 
 
 def generate_meal_response(user_query: str, meal: dict) -> str:
     _, _, claude = _get_clients()
     context = format_meal_as_context(meal)
-    response = claude.messages.create(
-        model="claude-haiku-4-5",
-        max_tokens=1024,
-        system=(
-            "You are a helpful meal planning assistant. "
-            "You suggest balanced meals by pairing main dishes with complementary sides. "
-            "Use only the retrieved recipes provided. "
-            "Suggest 1-2 complete meal combinations, explaining why they pair well. "
-            "Include combined macro totals where possible. Be concise."
-        ),
-        messages=[
-            {
-                "role": "user",
-                "content": (
-                    f"User query: {user_query}\n\n"
-                    f"Retrieved recipes:\n{context}\n\n"
-                    "Suggest a balanced meal pairing from these options."
-                ),
-            }
-        ],
-    )
+    try:
+        response = claude.messages.create(
+            model="claude-haiku-4-5",
+            max_tokens=1024,
+            system=(
+                "You are a helpful meal planning assistant. "
+                "You suggest balanced meals by pairing main dishes with complementary sides. "
+                "Use only the retrieved recipes provided. "
+                "Suggest 1-2 complete meal combinations, explaining why they pair well. "
+                "Include combined macro totals where possible. Be concise."
+            ),
+            messages=[
+                {
+                    "role": "user",
+                    "content": (
+                        f"User query: {user_query}\n\n"
+                        f"Retrieved recipes:\n{context}\n\n"
+                        "Suggest a balanced meal pairing from these options."
+                    ),
+                }
+            ],
+        )
+    except anthropic.APIError as e:
+        logger.error("Claude API error generating meal response: %s", e)
+        raise RuntimeError("Failed to generate AI meal response") from e
     return response.content[0].text
 
 

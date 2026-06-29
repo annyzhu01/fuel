@@ -1,3 +1,4 @@
+import logging
 import sys
 import os
 import pdfplumber
@@ -6,6 +7,8 @@ from utils import get_supabase_client, get_anthropic_client, parse_float
 from load_data import upsert_ingredients
 from embed_recipes import embed_recipes
 from recipe_utils import parse_json_response
+
+logger = logging.getLogger(__name__)
 
 _EXTRACT_SYSTEM = (
     "You are a recipe data extractor. Given text from a cookbook PDF, extract every complete recipe "
@@ -59,6 +62,10 @@ def extract_text_chunks(
     return chunks
 
 
+class ChunkExtractionError(Exception):
+    pass
+
+
 def extract_recipes_from_chunk(
     client, chunk_text: str, chunk_index: int = 0
 ) -> list[dict]:
@@ -73,23 +80,28 @@ def extract_recipes_from_chunk(
         )
         return parse_json_response(response.content[0].text)
     except anthropic.APIError as e:
-        print(f"WARNING: Claude API error on chunk {chunk_index}: {e}")
-        return []
-    except json.JSONDecodeError:
-        print(f"WARNING: could not parse JSON from chunk {chunk_index}, skipping")
-        return []
+        logger.error("Claude API error on chunk %d: %s", chunk_index, e)
+        raise ChunkExtractionError(f"API error on chunk {chunk_index}") from e
+    except json.JSONDecodeError as e:
+        logger.error("Failed to parse JSON from chunk %d", chunk_index)
+        raise ChunkExtractionError(f"Invalid JSON from chunk {chunk_index}") from e
 
 
 def extract_recipes_from_chunks(
     client, chunks: list[str]
-) -> list[dict]:
+) -> tuple[list[dict], int]:
     all_recipes = []
     total = len(chunks)
+    chunk_errors = 0
     for i, chunk in enumerate(chunks):
-        recipes = extract_recipes_from_chunk(client, chunk, chunk_index=i + 1)
-        print(f"Chunk {i + 1}/{total}: found {len(recipes)} recipes")
-        all_recipes.extend(recipes)
-    return all_recipes
+        try:
+            recipes = extract_recipes_from_chunk(client, chunk, chunk_index=i + 1)
+            logger.info("Chunk %d/%d: found %d recipes", i + 1, total, len(recipes))
+            all_recipes.extend(recipes)
+        except ChunkExtractionError:
+            chunk_errors += 1
+            logger.warning("Skipping chunk %d/%d due to extraction error", i + 1, total)
+    return all_recipes, chunk_errors
 
 
 def map_recipe_pdf(raw: dict, source_filename: str) -> dict:
@@ -119,13 +131,15 @@ def insert_recipe_pdf(supabase, recipe_dict: dict) -> str | None:
         raise
 
 
-def insert_pdf_recipes(supabase, recipes: list[dict], source_filename: str) -> tuple[int, int]:
+def insert_pdf_recipes(supabase, recipes: list[dict], source_filename: str) -> tuple[int, int, int]:
     inserted = 0
     skipped = 0
+    errors = 0
     for raw in recipes:
         mapped = map_recipe_pdf(raw, source_filename)
         if not mapped.get("title"):
-            print("Skipped recipe with no title")
+            logger.warning("Skipped recipe with no title from %s", source_filename)
+            skipped += 1
             continue
         try:
             recipe_id = insert_recipe_pdf(supabase, mapped)
@@ -138,14 +152,16 @@ def insert_pdf_recipes(supabase, recipes: list[dict], source_filename: str) -> t
                 if ing.get("name")
             ]
             upsert_ingredients(supabase, recipe_id, ingredient_pairs)
-            print(f"Inserted: {mapped['title']}, recipe ID: {recipe_id}")
+            logger.info("Inserted: %s, recipe ID: %s", mapped['title'], recipe_id)
             inserted += 1
         except Exception as e:
-            print(f"ERROR inserting {mapped.get('title')!r}: {e}")
-    return inserted, skipped
+            errors += 1
+            logger.error("Failed to insert recipe %r from %s: %s", mapped.get('title'), source_filename, e)
+    return inserted, skipped, errors
 
 
 def main():
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
     pdf_paths = sys.argv[1:]
     if not pdf_paths:
         print("Usage: python ingest_pdf.py cookbook.pdf [another.pdf ...]")
@@ -156,28 +172,42 @@ def main():
 
     total_inserted = 0
     total_skipped = 0
+    total_errors = 0
+    total_chunk_errors = 0
+    files_failed = []
 
     for pdf_path in pdf_paths:
         filename = os.path.basename(pdf_path)
-        print(f"\n--- Processing {filename} ---")
+        logger.info("Processing %s", filename)
         try:
             chunks = extract_text_chunks(pdf_path)
-            print(f"{len(chunks)} chunk(s) from {filename}")
-            recipes = extract_recipes_from_chunks(client, chunks)
+            logger.info("%d chunk(s) from %s", len(chunks), filename)
+            recipes, chunk_errors = extract_recipes_from_chunks(client, chunks)
+            total_chunk_errors += chunk_errors
             if not recipes:
-                print(f"WARNING: no recipes extracted from {filename}")
+                logger.warning("No recipes extracted from %s", filename)
                 continue
-            ins, skp = insert_pdf_recipes(supabase, recipes, filename)
+            ins, skp, errs = insert_pdf_recipes(supabase, recipes, filename)
             total_inserted += ins
             total_skipped += skp
+            total_errors += errs
         except FileNotFoundError:
-            print(f"ERROR: file not found: {pdf_path}")
+            logger.error("File not found: %s", pdf_path)
+            files_failed.append(pdf_path)
         except Exception as e:
-            print(f"ERROR: could not process {pdf_path}: {e}")
+            logger.error("Failed to process %s: %s", pdf_path, e)
+            files_failed.append(pdf_path)
 
-    print(f"\nEmbedding new recipes...")
+    logger.info("Embedding new recipes...")
     embed_recipes()
-    print(f"\nDone. {total_inserted} inserted, {total_skipped} skipped from {len(pdf_paths)} file(s).")
+
+    logger.info(
+        "Done. %d inserted, %d skipped, %d insert errors, %d chunk errors from %d file(s).",
+        total_inserted, total_skipped, total_errors, total_chunk_errors, len(pdf_paths),
+    )
+    if files_failed:
+        logger.error("Failed files: %s", ", ".join(files_failed))
+        sys.exit(1)
 
 
 if __name__ == "__main__":

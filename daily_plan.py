@@ -1,3 +1,6 @@
+import json
+import logging
+import anthropic
 from utils import get_supabase_client, get_anthropic_client
 from query_recipes import query_recipes
 from workout_calories import is_cardio
@@ -8,6 +11,8 @@ from recipe_utils import (
     format_recipe_candidates,
     parse_json_response,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _compute_remaining(target: dict, workout_burn: float, food_logged: list[dict], cardio_burn: float = 0.0) -> dict:
@@ -36,10 +41,12 @@ def get_daily_budget(user_id: str, date: str) -> dict:
         .select("*")
         .eq("user_id", user_id)
         .eq("date", date)
-        .single()
+        .maybe_single()
         .execute()
     )
     target = target_row.data
+    if not target:
+        raise ValueError(f"No daily target found for user {user_id!r} on {date}")
 
     workout_rows = (
         supabase.table("workout_logs")
@@ -158,11 +165,19 @@ Rules for protein_gap and protein_warning:
 - protein_gap = remaining_protein_target - total_planned.protein_g (0 if on target)
 - protein_warning = null if gap <= 10g, otherwise a short actionable fix e.g. "Add a protein shake (+25g) or 200g cottage cheese (+24g) to close the gap."""
 
-    response = get_anthropic_client().messages.create(
-        model="claude-haiku-4-5",
-        max_tokens=1000,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    plan = parse_json_response(response.content[0].text)
+    try:
+        response = get_anthropic_client().messages.create(
+            model="claude-haiku-4-5",
+            max_tokens=1000,
+            messages=[{"role": "user", "content": prompt}],
+        )
+    except anthropic.APIError as e:
+        logger.error("Claude API error while building daily plan: %s", e)
+        raise RuntimeError("Failed to generate meal plan from AI service") from e
+    try:
+        plan = parse_json_response(response.content[0].text)
+    except (json.JSONDecodeError, ValueError) as e:
+        logger.error("Failed to parse meal plan JSON: %s", response.content[0].text[:200])
+        raise RuntimeError("AI returned an invalid meal plan response") from e
 
     return {"budget": budget, **plan}

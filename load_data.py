@@ -1,4 +1,7 @@
+import logging
 from utils import get_supabase_client, parse_float, parse_list, clean_description
+
+logger = logging.getLogger(__name__)
 
 
 # --- mappers: raw dataset row -> DB dict ---
@@ -91,17 +94,24 @@ def upsert_ingredients(supabase, recipe_id, ingredients):
 # --- generic batch loader ---
 
 def insert_recipe_batch(supabase, records, map_fn, extract_ingredients_fn):
+    inserted = 0
+    errors = 0
     for i, record in enumerate(records):
         mapped = map_fn(record)
         if not mapped.get('title'):
-            print(f"Skipped {i}: missing title")
+            logger.warning("Skipped record %d: missing title", i)
             continue
         try:
             recipe_id = upsert_recipe(supabase, mapped)
             upsert_ingredients(supabase, recipe_id, extract_ingredients_fn(record))
-            print(f"Inserted: {mapped['title']}, recipe ID : {recipe_id} [{i + 1}]")
+            inserted += 1
         except Exception as e:
-            print(f"Skipped {i} ({mapped.get('title')}): {e}")
+            errors += 1
+            logger.error("Failed to insert record %d (%s): %s", i, mapped.get('title'), e)
+    logger.info("Batch complete: %d inserted, %d failed out of %d records", inserted, errors, len(records))
+    if errors:
+        logger.warning("%d records failed during batch insert", errors)
+    return inserted, errors
 
 
 # --- dataset loaders ---

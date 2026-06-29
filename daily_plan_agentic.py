@@ -1,8 +1,12 @@
+import logging
+import anthropic
 from utils import get_anthropic_client
 from daily_plan import get_daily_budget
 from pantry import get_pantry
 from query_recipes import query_recipes
 from recipe_utils import format_recipe_candidate
+
+logger = logging.getLogger(__name__)
 
 MAX_SEARCH_CALLS = 3
 
@@ -124,13 +128,17 @@ def build_daily_plan_agentic(user_id: str, date: str, preferences: list = None) 
         turn_count += 1
         if turn_count > MAX_SEARCH_CALLS * 3:
             raise RuntimeError("Agentic planner exceeded max turns")
-        response = claude.messages.create(
-            model="claude-haiku-4-5",
-            max_tokens=2000,
-            system=system_prompt,
-            tools=_TOOLS,
-            messages=messages,
-        )
+        try:
+            response = claude.messages.create(
+                model="claude-haiku-4-5",
+                max_tokens=2000,
+                system=system_prompt,
+                tools=_TOOLS,
+                messages=messages,
+            )
+        except anthropic.APIError as e:
+            logger.error("Claude API error during agentic planning (turn %d): %s", turn_count, e)
+            raise RuntimeError("AI service unavailable while building meal plan") from e
 
         # Append assistant response to message history
         messages.append({"role": "assistant", "content": response.content})
@@ -162,14 +170,19 @@ def build_daily_plan_agentic(user_id: str, date: str, preferences: list = None) 
                 kwargs = dict(block.input)
                 kwargs.pop("slot", None)
                 query_text = kwargs.pop("query")
-                results = query_recipes(
-                    semantic_query=query_text,
-                    match_count=5,
-                    max_calories=kwargs.get("max_calories"),
-                    min_protein=kwargs.get("min_protein"),
-                )
+                try:
+                    results = query_recipes(
+                        semantic_query=query_text,
+                        match_count=5,
+                        max_calories=kwargs.get("max_calories"),
+                        min_protein=kwargs.get("min_protein"),
+                    )
+                except Exception as e:
+                    logger.warning("Recipe search failed for query %r: %s", query_text, e)
+                    results = []
 
-                result_text = f"Results for '{query_text}' ({block.input.get('slot', '')}):\n"
+                slot_name = block.input.get('slot', '')
+                result_text = f"Results for '{query_text}' ({slot_name}):\n"
                 if not results:
                     result_text += "No results found."
                 else:
