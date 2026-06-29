@@ -14,30 +14,31 @@ import { MacroRing } from "@/components/MacroRing";
 import { MealCard } from "@/components/MealCard";
 import { Pantry } from "@/components/Pantry";
 
+type Tab = "today" | "pantry";
+
 export default function TodayPage() {
   const [budget, setBudget] = useState<Budget | null>(null);
   const [plan, setPlan] = useState<DailyPlan | null>(null);
   const [loading, setLoading] = useState(true);
   const [planLoading, setPlanLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [tab, setTab] = useState<Tab>("today");
 
   const [showWorkout, setShowWorkout] = useState(false);
   const [exercise, setExercise] = useState("");
   const [duration, setDuration] = useState("");
   const [logging, setLogging] = useState(false);
 
-  const [vibe, setVibe] = useState("");
-  const [vibeInput, setVibeInput] = useState("");
 
   async function refresh() {
     const b = await getBudget();
     setBudget(b);
   }
 
-  async function refreshPlan(v?: string) {
+  async function refreshPlan() {
     setPlanLoading(true);
     try {
-      const p = await getDailyPlan(v ?? vibe);
+      const p = await getDailyPlan();
       setPlan(p);
     } catch (e) {
       console.error("Plan fetch failed", e);
@@ -61,12 +62,6 @@ export default function TodayPage() {
     }
     init();
   }, []);
-
-  async function handleVibeSubmit() {
-    const v = vibeInput.trim();
-    setVibe(v);
-    await refreshPlan(v);
-  }
 
   async function handleLogWorkout() {
     if (!exercise || !duration) return;
@@ -105,7 +100,7 @@ export default function TodayPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center text-gray-400">
+      <div className="min-h-screen flex items-center justify-center text-gray-400 bg-[#f5f5f0]">
         Loading...
       </div>
     );
@@ -113,7 +108,7 @@ export default function TodayPage() {
 
   if (error) {
     return (
-      <div className="min-h-screen flex items-center justify-center text-red-400 text-sm px-8 text-center">
+      <div className="min-h-screen flex items-center justify-center text-red-500 text-sm px-8 text-center bg-[#f5f5f0]">
         {error}
       </div>
     );
@@ -122,116 +117,146 @@ export default function TodayPage() {
   const r = budget?.remaining;
   const t = budget?.target;
   const totalCal = (t?.base_calories ?? 0) + (budget?.workout_burn ?? 0);
+  const consumedCal = totalCal - (r?.remaining_calories ?? totalCal);
+  const consumedProtein = (t?.goal_protein_g ?? 0) - (r?.remaining_protein_g ?? 0);
+  const consumedCarbs = (t?.goal_carbs_g ?? 0) - (r?.remaining_carbs_g ?? 0);
+  const consumedFat = (t?.goal_fat_g ?? 0) - (r?.remaining_fat_g ?? 0);
 
   return (
-    <main className="min-h-screen max-w-md mx-auto p-4 flex flex-col gap-6">
-      <div className="flex justify-between items-center pt-4">
-        <h1 className="text-2xl font-bold text-white">Fuel</h1>
-        {(budget?.workout_burn ?? 0) > 0 && (
-          <span className="text-green-400 text-sm font-medium">
-            +{budget!.workout_burn} kcal burned
-          </span>
-        )}
-      </div>
+    <div className="min-h-screen bg-[#f5f5f0] flex flex-col">
+      <main className="flex-1 max-w-md mx-auto w-full px-4 pb-28 flex flex-col gap-5">
 
-      {r && t && (
-        <div className="flex justify-around bg-gray-900 rounded-2xl p-4">
-          <MacroRing remaining={r.remaining_calories} total={totalCal} label="kcal" color="#22c55e" />
-          <MacroRing remaining={r.remaining_protein_g} total={t.goal_protein_g} label="protein" color="#3b82f6" />
-          <MacroRing remaining={r.remaining_carbs_g} total={t.goal_carbs_g} label="carbs" color="#f59e0b" />
-          <MacroRing remaining={r.remaining_fat_g} total={t.goal_fat_g} label="fat" color="#ef4444" />
-        </div>
-      )}
-
-      <button
-        onClick={() => setShowWorkout(!showWorkout)}
-        className="w-full bg-gray-800 hover:bg-gray-700 text-white rounded-xl py-3 font-semibold transition-colors"
-      >
-        {showWorkout ? "Cancel" : "+ Log Workout"}
-      </button>
-
-      {showWorkout && (
-        <div className="bg-gray-800 rounded-xl p-4 flex flex-col gap-3">
-          <input
-            className="bg-gray-700 text-white rounded-lg px-3 py-2 text-sm placeholder-gray-400 outline-none focus:ring-1 focus:ring-green-500"
-            placeholder="Exercise type (e.g. run, weights, legs)"
-            value={exercise}
-            onChange={(e) => setExercise(e.target.value)}
-          />
-          <input
-            className="bg-gray-700 text-white rounded-lg px-3 py-2 text-sm placeholder-gray-400 outline-none focus:ring-1 focus:ring-green-500"
-            placeholder="Duration (minutes)"
-            type="number"
-            value={duration}
-            onChange={(e) => setDuration(e.target.value)}
-          />
-          <button
-            onClick={handleLogWorkout}
-            disabled={logging || !exercise || !duration}
-            className="bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white rounded-lg py-2 font-semibold text-sm transition-colors"
-          >
-            {logging ? "Saving..." : "Save Workout"}
-          </button>
-        </div>
-      )}
-
-      {plan?.protein_warning && (
-        <div className="bg-amber-900/40 border border-amber-600 rounded-xl px-4 py-3 flex gap-2 items-start">
-          <span className="text-amber-400 text-lg leading-none">⚠</span>
-          <p className="text-amber-300 text-sm">{plan.protein_warning}</p>
-        </div>
-      )}
-
-      {plan?.coach_note && (
-        <p className="text-gray-400 text-sm italic px-1">{plan.coach_note}</p>
-      )}
-
-      <div className="flex flex-col gap-3">
-        <div className="flex justify-between items-center">
-          <h2 className="text-lg font-semibold text-white">What to eat</h2>
+        {/* Header */}
+        <div className="pt-12 pb-1">
+          <p className="text-gray-500 text-sm">Good morning 👋</p>
+          <h1 className="text-2xl font-bold text-gray-900">Fuel</h1>
         </div>
 
-        <div className="flex gap-2">
-          <input
-            className="flex-1 bg-gray-800 text-white rounded-xl px-4 py-2 text-sm placeholder-gray-500 outline-none focus:ring-1 focus:ring-green-500"
-            placeholder="What do you feel like? (e.g. something spicy, Asian, pasta)"
-            value={vibeInput}
-            onChange={(e) => setVibeInput(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleVibeSubmit()}
-          />
-          <button
-            onClick={handleVibeSubmit}
-            disabled={planLoading}
-            className="bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-colors"
-          >
-            {planLoading ? "..." : "Go"}
-          </button>
-        </div>
+        {tab === "today" && (
+          <>
+            {/* Macro card */}
+            {r && t && (
+              <div className="bg-white rounded-2xl p-5 shadow-sm">
+                <MacroRing
+                  caloriesConsumed={consumedCal}
+                  caloriesTotal={totalCal}
+                  protein={{ consumed: consumedProtein, total: t.goal_protein_g }}
+                  carbs={{ consumed: consumedCarbs, total: t.goal_carbs_g }}
+                  fat={{ consumed: consumedFat, total: t.goal_fat_g }}
+                />
+                {(budget?.workout_burn ?? 0) > 0 && (
+                  <p className="text-xs text-[#2d6b2d] font-medium mt-3">
+                    +{budget!.workout_burn} kcal from workout added to budget
+                  </p>
+                )}
+              </div>
+            )}
 
-        {vibe && (
-          <p className="text-xs text-gray-500">
-            Showing results for "{vibe}" —{" "}
+            {/* Log Workout */}
             <button
-              className="text-gray-400 hover:text-white underline"
-              onClick={() => { setVibe(""); setVibeInput(""); refreshPlan(""); }}
+              onClick={() => setShowWorkout(!showWorkout)}
+              className="w-full bg-white hover:bg-gray-50 text-gray-800 rounded-2xl py-3 font-semibold shadow-sm border border-gray-100 transition-colors text-sm"
             >
-              clear
+              {showWorkout ? "Cancel" : "+ Log Workout"}
             </button>
-          </p>
+
+            {showWorkout && (
+              <div className="bg-white rounded-2xl p-4 shadow-sm flex flex-col gap-3">
+                <input
+                  className="bg-gray-50 text-gray-900 rounded-xl px-3 py-2.5 text-sm placeholder-gray-400 outline-none focus:ring-2 focus:ring-[#2d6b2d]/30 border border-gray-100"
+                  placeholder="Exercise type (e.g. run, weights, legs)"
+                  value={exercise}
+                  onChange={(e) => setExercise(e.target.value)}
+                />
+                <input
+                  className="bg-gray-50 text-gray-900 rounded-xl px-3 py-2.5 text-sm placeholder-gray-400 outline-none focus:ring-2 focus:ring-[#2d6b2d]/30 border border-gray-100"
+                  placeholder="Duration (minutes)"
+                  type="number"
+                  value={duration}
+                  onChange={(e) => setDuration(e.target.value)}
+                />
+                <button
+                  onClick={handleLogWorkout}
+                  disabled={logging || !exercise || !duration}
+                  className="bg-[#2d6b2d] hover:bg-[#245824] disabled:opacity-40 text-white rounded-xl py-2.5 font-semibold text-sm transition-colors"
+                >
+                  {logging ? "Saving..." : "Log Workout"}
+                </button>
+              </div>
+            )}
+
+            {/* Warnings / Coach */}
+            {plan?.protein_warning && (
+              <div className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 flex gap-2 items-start">
+                <span className="text-amber-500 text-lg leading-none">⚠</span>
+                <p className="text-amber-700 text-sm">{plan.protein_warning}</p>
+              </div>
+            )}
+
+            {plan?.coach_note && (
+              <div className="bg-[#e8f0e8] rounded-2xl px-4 py-3 flex gap-2 items-start">
+                <span className="text-[#2d6b2d] text-lg leading-none">💬</span>
+                <p className="text-[#2d6b2d] text-sm font-medium">{plan.coach_note}</p>
+              </div>
+            )}
+
+            {/* Meal Plan */}
+            <div className="flex flex-col gap-3">
+              <h2 className="text-base font-bold text-gray-900">Today's Plan</h2>
+
+              {planLoading ? (
+                <p className="text-gray-400 text-sm">Updating suggestions...</p>
+              ) : plan?.plan?.length ? (
+                plan.plan.map((item, i) => (
+                  <MealCard
+                    key={i}
+                    item={item}
+                    onLog={handleLogMeal}
+                    onSwap={handleSwap}
+                    otherSlotIds={plan.plan
+                      .filter((p) => p.slot !== item.slot && p.recipe_id)
+                      .map((p) => p.recipe_id)}
+                  />
+                ))
+              ) : (
+                <p className="text-gray-400 text-sm">All meals logged for today.</p>
+              )}
+            </div>
+          </>
         )}
 
-        {planLoading ? (
-          <p className="text-gray-400 text-sm">Updating suggestions...</p>
-        ) : plan?.plan?.length ? (
-          plan.plan.map((item, i) => (
-            <MealCard key={i} item={item} onLog={handleLogMeal} onSwap={handleSwap} vibe={vibe} />
-          ))
-        ) : (
-          <p className="text-gray-400 text-sm">All meals logged for today.</p>
+        {tab === "pantry" && (
+          <div className="pt-2">
+            <h2 className="text-base font-bold text-gray-900 mb-4">Pantry</h2>
+            <Pantry />
+          </div>
         )}
-      </div>
+      </main>
 
-      <Pantry />
-    </main>
+      {/* Bottom Nav */}
+      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 shadow-lg z-40">
+        <div className="max-w-md mx-auto flex items-center justify-around px-8 py-3">
+          <button
+            onClick={() => setTab("today")}
+            className={`flex flex-col items-center gap-1 transition-colors ${tab === "today" ? "text-[#2d6b2d]" : "text-gray-400"}`}
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+            </svg>
+            <span className="text-xs font-medium">Today</span>
+          </button>
+
+          <button
+            onClick={() => setTab("pantry")}
+            className={`flex flex-col items-center gap-1 transition-colors ${tab === "pantry" ? "text-[#2d6b2d]" : "text-gray-400"}`}
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+            </svg>
+            <span className="text-xs font-medium">Pantry</span>
+          </button>
+        </div>
+      </nav>
+    </div>
   );
 }

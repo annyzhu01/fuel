@@ -11,8 +11,8 @@ from recipe_utils import (
 
 
 def _compute_remaining(target: dict, workout_burn: float, food_logged: list[dict], cardio_burn: float = 0.0) -> dict:
-    # Only cardio burn (≥50% if >300 kcal) adds to calorie budget; weights burn stays as deficit
-    cardio_add = (cardio_burn * 0.5) if cardio_burn > 300 else cardio_burn
+    # Cardio: eat back 50% if >300 kcal burn, nothing if ≤300; weights always 0
+    cardio_add = (cardio_burn * 0.5) if cardio_burn > 300 else 0
     total_calories = target["base_calories"] + cardio_add
     consumed_calories = sum(f["calories"] for f in food_logged)
     consumed_protein = sum(f["protein_g"] for f in food_logged)
@@ -85,6 +85,7 @@ def build_daily_plan(user_id: str, date: str, preferences: list[str] = None) -> 
     SNACK_BYPASS = True
 
     candidates_by_slot = {}
+    used_ids: set[str] = set()
     for slot in slots_needed:
         if slot == "snack" and SNACK_BYPASS:
             candidates_by_slot[slot] = []
@@ -97,7 +98,11 @@ def build_daily_plan(user_id: str, date: str, preferences: list[str] = None) -> 
             max_calories=per_slot_cal * 1.4,
             min_protein=max(0, per_slot_protein * 0.5),
         )
-        candidates_by_slot[slot] = results
+        deduped = [r for r in results if r.get("id") not in used_ids]
+        candidates_by_slot[slot] = deduped
+        for r in deduped:
+            if r.get("id"):
+                used_ids.add(r["id"])
 
     slots_text = ""
     for slot, recipes in candidates_by_slot.items():

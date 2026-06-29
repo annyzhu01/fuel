@@ -10,23 +10,27 @@ interface MealCardProps {
   item: PlanItem;
   onLog: (item: PlanItem) => void;
   onSwap: (slot: string, newItem: PlanItem) => void;
-  vibe?: string;
+  otherSlotIds?: string[];
 }
 
-export function MealCard({ item, onLog, onSwap, vibe }: MealCardProps) {
+export function MealCard({ item, onLog, onSwap, otherSlotIds = [] }: MealCardProps) {
   const [swapping, setSwapping] = useState(false);
   const [showRecipe, setShowRecipe] = useState(false);
+  const [showVibeInput, setShowVibeInput] = useState(false);
+  const [vibeInput, setVibeInput] = useState("");
   const [seenIds, setSeenIds] = useState<string[]>(item.recipe_id ? [item.recipe_id] : []);
   const swapsUsed = seenIds.length - 1;
   const swapsLeft = MAX_SWAPS - swapsUsed;
 
-  async function handleSwap(e: React.MouseEvent) {
-    e.stopPropagation();
+  async function handleSwap(vibe?: string) {
     setSwapping(true);
+    setShowVibeInput(false);
     try {
-      const newItem = await swapMeal(item.slot, seenIds, vibe);
+      const allExcluded = Array.from(new Set([...seenIds, ...otherSlotIds]));
+      const newItem = await swapMeal(item.slot, allExcluded, vibe);
       if (newItem.recipe_id) setSeenIds((prev) => [...prev, newItem.recipe_id]);
       onSwap(item.slot, newItem);
+      setVibeInput("");
     } catch (e) {
       console.error("Swap failed", e);
     } finally {
@@ -34,47 +38,79 @@ export function MealCard({ item, onLog, onSwap, vibe }: MealCardProps) {
     }
   }
 
+  function handleSwapClick(e: React.MouseEvent) {
+    e.stopPropagation();
+    setShowVibeInput((v) => !v);
+  }
+
   return (
     <>
-      <div
-        className="bg-gray-800 rounded-xl p-4 flex flex-col gap-2 cursor-pointer hover:bg-gray-750 active:bg-gray-700 transition-colors"
-        onClick={() => item.recipe_id && setShowRecipe(true)}
-      >
-        <div className="flex justify-between items-start">
-          <div>
-            <p className="text-xs text-gray-400 uppercase tracking-wider">{item.slot}</p>
-            <p className="text-white font-semibold">{item.recipe_name}</p>
-          </div>
-          <div className="flex gap-2 items-center">
-            {swapsLeft > 0 ? (
+      <div className="flex flex-col">
+        <div
+          className="bg-white rounded-2xl p-4 shadow-sm border border-gray-50 cursor-pointer active:scale-[0.99] transition-transform"
+          onClick={() => item.recipe_id && setShowRecipe(true)}
+        >
+          <div className="flex justify-between items-start gap-3">
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-semibold text-[#2d6b2d] uppercase tracking-wider mb-0.5">{item.slot}</p>
+              <p className="text-gray-900 font-semibold text-sm leading-snug">{item.recipe_name}</p>
+              <p className="text-xs text-gray-400 mt-0.5 italic truncate">{item.reason}</p>
+            </div>
+            <div className="flex gap-2 items-center flex-shrink-0">
+              {swapsLeft > 0 ? (
+                <button
+                  onClick={handleSwapClick}
+                  disabled={swapping}
+                  title={`${swapsLeft} swap${swapsLeft !== 1 ? "s" : ""} left`}
+                  className={`disabled:opacity-40 text-xs w-7 h-7 rounded-full border flex items-center justify-center transition-colors ${showVibeInput ? "border-[#2d6b2d] text-[#2d6b2d]" : "border-gray-200 text-gray-400 hover:text-gray-700 hover:border-gray-400"}`}
+                >
+                  {swapping ? "·" : "↻"}
+                </button>
+              ) : (
+                <span className="text-gray-300 text-xs w-7 text-center">↻</span>
+              )}
               <button
-                onClick={handleSwap}
-                disabled={swapping}
-                className="text-gray-400 hover:text-white disabled:opacity-40 text-xs px-2 py-1 rounded-full border border-gray-600 hover:border-gray-400 transition-colors"
-                title={`${swapsLeft} swap${swapsLeft !== 1 ? "s" : ""} left`}
+                onClick={(e) => { e.stopPropagation(); onLog(item); }}
+                className="bg-[#2d6b2d] hover:bg-[#245824] text-white text-xs px-3 py-1.5 rounded-full transition-colors font-medium"
               >
-                {swapping ? "..." : "↻"}
+                Log
               </button>
-            ) : (
-              <span className="text-gray-600 text-xs px-2">↻ 0 left</span>
-            )}
+            </div>
+          </div>
+
+          <div className="flex gap-3 mt-3 text-xs text-gray-500">
+            <span className="font-medium text-gray-700">{item.calories} kcal</span>
+            <span>{item.protein_g}g protein</span>
+            <span>{item.carbs_g}g carbs</span>
+            <span>{item.fat_g}g fat</span>
+          </div>
+
+          {item.recipe_id && (
+            <p className="text-xs text-gray-300 mt-2">Tap to view recipe →</p>
+          )}
+        </div>
+
+        {/* Per-meal vibe input */}
+        {showVibeInput && (
+          <div
+            className="bg-gray-50 border border-gray-100 rounded-b-2xl -mt-2 pt-4 pb-3 px-4 flex gap-2"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <input
+              autoFocus
+              className="flex-1 bg-white text-gray-900 rounded-xl px-3 py-2 text-sm placeholder-gray-400 outline-none focus:ring-2 focus:ring-[#2d6b2d]/30 border border-gray-100"
+              placeholder={`Something specific for ${item.slot}? (optional)`}
+              value={vibeInput}
+              onChange={(e) => setVibeInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleSwap(vibeInput.trim() || undefined)}
+            />
             <button
-              onClick={(e) => { e.stopPropagation(); onLog(item); }}
-              className="bg-green-600 hover:bg-green-500 text-white text-xs px-3 py-1 rounded-full transition-colors"
+              onClick={() => handleSwap(vibeInput.trim() || undefined)}
+              className="bg-[#2d6b2d] hover:bg-[#245824] text-white px-3 py-2 rounded-xl text-sm font-semibold transition-colors"
             >
-              Log
+              ↻
             </button>
           </div>
-        </div>
-        <p className="text-xs text-gray-400 italic">{item.reason}</p>
-        <div className="flex gap-3 text-xs text-gray-300">
-          <span>{item.calories} kcal</span>
-          <span>{item.protein_g}g protein</span>
-          <span>{item.carbs_g}g carbs</span>
-          <span>{item.fat_g}g fat</span>
-        </div>
-        {item.recipe_id && (
-          <p className="text-xs text-gray-500">Tap to view recipe</p>
         )}
       </div>
 

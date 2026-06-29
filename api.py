@@ -1,4 +1,3 @@
-import os
 from datetime import date
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -146,7 +145,7 @@ def get_recipe(recipe_id: str):
         ing_list = ", ".join(recipe["ingredients"][:15]) or "unknown"
         tip_resp = client.messages.create(
             model="claude-haiku-4-5",
-            max_tokens=120,
+            max_tokens=220,
             messages=[{
                 "role": "user",
                 "content": (
@@ -154,8 +153,10 @@ def get_recipe(recipe_id: str):
                     f"Macros: {recipe.get('calories', '?')} kcal, {recipe.get('protein_g', '?')}g protein, "
                     f"{recipe.get('carbohydrate_g', '?')}g carbs, {recipe.get('fat_g', '?')}g fat\n"
                     f"Ingredients: {ing_list}\n\n"
-                    "Give ONE concise healthy tip (2-3 sentences max): suggest a specific vegetable to add to bulk it up, "
-                    "or one swap to reduce calories while preserving taste. Be specific and practical. No intro phrases."
+                    "Give exactly 2 short healthy tips (1-2 sentences each), separated by a blank line.\n"
+                    "Tip 1: an ingredient swap — name the exact ingredient to replace and what to swap it with, and why (e.g. swap sour cream → Greek yogurt for 3x the protein).\n"
+                    "Tip 2: either a cooking method change to cut calories, a specific ingredient to add with quantity to boost fibre/protein, or a complementary side that improves the meal's nutrition.\n"
+                    "No numbering. No intro phrases like 'To make this healthier' or 'Try'. Name exact ingredients."
                 ),
             }],
         )
@@ -166,26 +167,155 @@ def get_recipe(recipe_id: str):
     return recipe
 
 
+def _extract_ingredients_from_vibe(vibe: str) -> list[str]:
+    """Use Claude Haiku to extract ingredient names from free-text vibe."""
+    import json
+    resp = get_anthropic_client().messages.create(
+        model="claude-haiku-4-5",
+        max_tokens=80,
+        messages=[{
+            "role": "user",
+            "content": (
+                f'Extract food ingredient names from this text as a JSON array of strings. '
+                f'Only include actual ingredients (e.g. ["egg whites", "cottage cheese"]). '
+                f'If no ingredients mentioned, return []. Text: "{vibe}"\n\nReturn only the JSON array.'
+            ),
+        }],
+    )
+    try:
+        return json.loads(resp.content[0].text.strip())
+    except Exception:
+        return []
+
+
+def _query_recipes_by_ingredients(
+    ingredient_names: list[str],
+    supabase,
+    excluded: set,
+    max_calories: float,
+    min_protein: float,
+) -> list[dict]:
+    """Find and rank recipes by how many of the given ingredients they contain."""
+    matched_ing_ids = set()
+    for name in ingredient_names:
+        rows = supabase.table("ingredients").select("id").ilike("name", f"%{name}%").execute()
+        for r in rows.data:
+            matched_ing_ids.add(r["id"])
+
+    if not matched_ing_ids:
+        return []
+
+    recipe_match_counts: dict[str, int] = {}
+    for ing_id in matched_ing_ids:
+        rows = supabase.table("recipe_ingredients").select("recipe_id").eq("ingredient_id", ing_id).execute()
+        for r in rows.data:
+            rid = r["recipe_id"]
+            recipe_match_counts[rid] = recipe_match_counts.get(rid, 0) + 1
+
+    sorted_ids = sorted(recipe_match_counts, key=lambda x: -recipe_match_counts[x])
+
+    if not sorted_ids:
+        return []
+
+    recipe_rows = (
+        supabase.table("recipes")
+        .select("id, title, calories, protein_g, carbohydrate_g, fat_g, category")
+        .in_("id", sorted_ids)
+        .execute()
+    )
+    id_to_recipe = {r["id"]: r for r in recipe_rows.data}
+
+    results = []
+    for rid in sorted_ids:
+        if rid not in id_to_recipe or rid in excluded:
+            continue
+        rec = id_to_recipe[rid]
+        cal = rec.get("calories") or 0
+        prot = rec.get("protein_g") or 0
+        if cal <= max_calories and prot >= min_protein:
+            results.append(rec)
+
+    return results
+
+
+def _llm_snack(per_slot_cal: float, per_slot_protein: float, vibe: str = "") -> dict:
+    """Generate a snack suggestion via LLM without RAG."""
+    from recipe_utils import parse_json_response
+    vibe_str = f" Vibe/preference: {vibe.strip()}." if vibe.strip() else ""
+    resp = get_anthropic_client().messages.create(
+        model="claude-haiku-4-5",
+        max_tokens=200,
+        messages=[{
+            "role": "user",
+            "content": (
+                f"Suggest one quick no-cook snack targeting ~{int(per_slot_cal)} kcal and ~{int(per_slot_protein)}g protein.{vibe_str} "
+                "Examples: Greek yogurt, cottage cheese, protein shake, boiled eggs, rice cakes + nut butter, fruit + nuts. "
+                "Respond ONLY with valid JSON: "
+                '{"name": "...", "calories": 0, "protein_g": 0, "carbs_g": 0, "fat_g": 0, "reason": "one sentence"}'
+            ),
+        }],
+    )
+    return parse_json_response(resp.content[0].text)
+
+
 @app.get("/swap-meal")
 def swap_meal(slot: str, exclude_ids: str = "", vibe: str = ""):
     if slot not in ("breakfast", "lunch", "dinner", "snack"):
         raise HTTPException(400, "slot must be breakfast, lunch, dinner, or snack")
+    import random
     excluded = set(i.strip() for i in exclude_ids.split(",") if i.strip())
     budget = get_daily_budget(USER_ID, str(date.today()))
     remaining = budget["remaining"]
     per_slot_cal, per_slot_protein = compute_per_slot_budget(remaining)
-    label = SLOT_LABELS[slot]
-    vibe_str = f" {vibe.strip()}" if vibe.strip() else ""
-    results = query_recipes(
-        f"{label}{vibe_str} around {int(per_slot_cal)} calories {int(per_slot_protein)}g protein",
-        match_count=50,
-        max_calories=per_slot_cal * 1.4,
-        min_protein=max(0, per_slot_protein * 0.5),
-    )
-    import random
-    results = [r for r in results if r.get("id") not in excluded]
+    max_cal = per_slot_cal * 1.4
+    min_prot = max(0, per_slot_protein * 0.5)
+
+    # Snack: skip RAG, use LLM directly
+    if slot == "snack":
+        snack = _llm_snack(per_slot_cal, per_slot_protein, vibe)
+        return {
+            "slot": slot,
+            "recipe_id": None,
+            "recipe_name": snack.get("name", "Snack"),
+            "calories": snack.get("calories") or 0,
+            "protein_g": snack.get("protein_g") or 0,
+            "carbs_g": snack.get("carbs_g") or 0,
+            "fat_g": snack.get("fat_g") or 0,
+            "reason": snack.get("reason", "Quick snack"),
+        }
+
+    results = []
+    reason = "Alternative suggestion"
+
+    # Try ingredient-based search first if vibe is provided
+    if vibe.strip():
+        supabase = get_supabase_client()
+        ingredients = _extract_ingredients_from_vibe(vibe)
+        if ingredients:
+            raw = _query_recipes_by_ingredients(ingredients, supabase, excluded, max_cal, min_prot)
+            if slot == "breakfast":
+                raw = [r for r in raw if (r.get("category") or "").lower() == "breakfast"]
+            else:
+                raw = [r for r in raw if (r.get("category") or "").lower() != "breakfast"]
+            results = raw
+            if results:
+                reason = f"Uses {', '.join(ingredients[:2])}"
+
+    # Fall back to RAG
+    if not results:
+        label = SLOT_LABELS[slot]
+        vibe_str = f" {vibe.strip()}" if vibe.strip() else ""
+        results = query_recipes(
+            f"{label}{vibe_str} around {int(per_slot_cal)} calories {int(per_slot_protein)}g protein",
+            match_count=50,
+            max_calories=max_cal,
+            min_protein=min_prot,
+        )
+        results = [r for r in results if r.get("id") not in excluded]
+
     if not results:
         raise HTTPException(404, "No alternative recipe found")
+
     r = random.choice(results[:10])
     return {
         "slot": slot,
@@ -195,7 +325,7 @@ def swap_meal(slot: str, exclude_ids: str = "", vibe: str = ""):
         "protein_g": r.get("protein_g") or 0,
         "carbs_g": r.get("carbohydrate_g") or 0,
         "fat_g": r.get("fat_g") or 0,
-        "reason": "Alternative suggestion",
+        "reason": reason,
     }
 
 

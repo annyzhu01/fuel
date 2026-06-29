@@ -6,7 +6,6 @@ import { getPantry, addToPantry, removeFromPantry } from "@/lib/api";
 export function Pantry() {
   const [items, setItems] = useState<string[]>([]);
   const [input, setInput] = useState("");
-  const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -32,47 +31,47 @@ export function Pantry() {
   }
 
   return (
-    <div className="bg-gray-900 rounded-2xl overflow-hidden">
-      <button
-        onClick={() => setOpen(!open)}
-        className="w-full flex justify-between items-center px-4 py-3 text-white font-semibold text-sm"
-      >
-        <span>Pantry ({items.length})</span>
-        <span className="text-gray-400">{open ? "▲" : "▼"}</span>
-      </button>
+    <div className="flex flex-col gap-4">
+      {/* Add input */}
+      <div className="flex gap-2">
+        <input
+          className="flex-1 bg-white text-gray-900 rounded-xl px-4 py-2.5 text-sm placeholder-gray-400 outline-none focus:ring-2 focus:ring-[#2d6b2d]/30 border border-gray-100 shadow-sm"
+          placeholder="Add ingredient..."
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && handleAdd()}
+        />
+        <button
+          onClick={handleAdd}
+          disabled={loading || !input.trim()}
+          className="bg-[#2d6b2d] hover:bg-[#245824] disabled:opacity-40 text-white px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors shadow-sm"
+        >
+          + Add
+        </button>
+      </div>
 
-      {open && (
-        <div className="px-4 pb-4 flex flex-col gap-2">
-          {items.length === 0 && (
-            <p className="text-gray-500 text-xs">No items yet. Add what you have at home.</p>
-          )}
-          {items.map((item) => (
-            <div key={item} className="flex justify-between items-center">
-              <span className="text-gray-300 text-sm">{item}</span>
+      {/* Items */}
+      {items.length === 0 ? (
+        <div className="bg-white rounded-2xl p-6 shadow-sm text-center">
+          <p className="text-gray-400 text-sm">No items yet.</p>
+          <p className="text-gray-300 text-xs mt-1">Add what you have at home to get better meal suggestions.</p>
+        </div>
+      ) : (
+        <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+          {items.map((item, i) => (
+            <div
+              key={item}
+              className={`flex justify-between items-center px-4 py-3 ${i < items.length - 1 ? "border-b border-gray-50" : ""}`}
+            >
+              <span className="text-gray-800 text-sm">{item}</span>
               <button
                 onClick={() => handleRemove(item)}
-                className="text-gray-500 hover:text-red-400 text-xs transition-colors"
+                className="text-gray-300 hover:text-red-400 text-sm transition-colors w-6 h-6 flex items-center justify-center"
               >
                 ✕
               </button>
             </div>
           ))}
-          <div className="flex gap-2 mt-1">
-            <input
-              className="flex-1 bg-gray-700 text-white rounded-lg px-3 py-1.5 text-sm placeholder-gray-400 outline-none focus:ring-1 focus:ring-green-500"
-              placeholder="Add ingredient..."
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleAdd()}
-            />
-            <button
-              onClick={handleAdd}
-              disabled={loading || !input.trim()}
-              className="bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white px-3 py-1.5 rounded-lg text-sm transition-colors"
-            >
-              +
-            </button>
-          </div>
         </div>
       )}
     </div>
