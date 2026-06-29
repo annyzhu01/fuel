@@ -1,7 +1,10 @@
+import os
+import secrets
 from datetime import date
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends, Security
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from fastapi.security import APIKeyHeader
+from pydantic import BaseModel, Field
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 
@@ -15,6 +18,20 @@ from utils import get_supabase_client, get_anthropic_client
 from pantry import get_pantry, add_to_pantry, remove_from_pantry
 from recipe_utils import SLOT_LABELS, compute_per_slot_budget, get_ingredient_names
 
+_ENV = os.getenv("ENV", "development")
+_is_prod = _ENV == "production"
+
+# --- API key auth ---
+_API_KEY = os.getenv("FUEL_API_KEY", "")
+_api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+
+async def _verify_api_key(key: str = Security(_api_key_header)):
+    if not _API_KEY:
+        return
+    if not key or not secrets.compare_digest(key, _API_KEY):
+        raise HTTPException(status_code=401, detail="Invalid or missing API key")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -22,13 +39,24 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="Fuel API", lifespan=lifespan)
+app = FastAPI(
+    title="Fuel API",
+    lifespan=lifespan,
+    docs_url=None if _is_prod else "/docs",
+    redoc_url=None if _is_prod else "/redoc",
+    openapi_url=None if _is_prod else "/openapi.json",
+    dependencies=[Depends(_verify_api_key)],
+)
+
+_allowed_origins = os.getenv(
+    "CORS_ORIGINS", "http://localhost:3000"
+).split(",")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=_allowed_origins,
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "X-API-Key"],
 )
 
 USER_ID = "mvp-user"
@@ -58,17 +86,17 @@ def _ensure_today_target():
 
 
 class WorkoutLog(BaseModel):
-    exercise_type: str
-    duration_minutes: float
+    exercise_type: str = Field(..., min_length=1, max_length=100)
+    duration_minutes: float = Field(..., gt=0, le=1440)
 
 
 class MealLog(BaseModel):
     meal_slot: str
-    description: str
-    calories: float
-    protein_g: float
-    carbs_g: float
-    fat_g: float
+    description: str = Field(..., min_length=1, max_length=500)
+    calories: float = Field(..., ge=0, le=10000)
+    protein_g: float = Field(..., ge=0, le=1000)
+    carbs_g: float = Field(..., ge=0, le=2000)
+    fat_g: float = Field(..., ge=0, le=1000)
 
 
 @app.get("/health")
@@ -338,7 +366,7 @@ def daily_plan(preferences: str = "", agentic: bool = False):
 
 
 class PantryAdd(BaseModel):
-    ingredient: str
+    ingredient: str = Field(..., min_length=1, max_length=200)
 
 
 @app.get("/pantry")
